@@ -108,7 +108,7 @@ func settle_day(game) -> Array[String]:
 		if not reward.is_empty():
 			lines.append("目标奖励：%s。" % _reward_text(reward, game))
 		if streak >= 2 and streak % 2 == 0:
-			var streak_reward := {"wood": 1, "food": 1}
+			var streak_reward := {"fuel": 1, "food": 1}
 			_grant_reward(game, streak_reward)
 			lines.append("连胜奖励：补给箱 +%s。" % _reward_text(streak_reward, game))
 	else:
@@ -235,7 +235,7 @@ func threat_label() -> String:
 func weather_effect(weather_name: String) -> Dictionary:
 	var info: Dictionary = weather_defs.get(weather_name, {})
 	if info.is_empty():
-		return {"id":weather_name, "label":weather_name, "threat_delta":0, "gather_multiplier":1.0}
+		return {"id":weather_name, "label":weather_name, "threat_delta":0, "gather_multiplier":1.0, "fuel_extra":0}
 	var result: Dictionary = info.duplicate(true)
 	result["id"] = weather_name
 	result["label"] = weather_name
@@ -463,6 +463,10 @@ func _apply_high_threat_incident(game, lines: Array[String]) -> void:
 		victim.apply_change("health", -damage)
 		victim.injured = true
 		lines.append("高威胁事件：%s 在夜袭中受伤（-%d 生命）。" % [victim.display_name, damage])
+	var lost := mini(2, int(game.resources.get_amount("scrap")))
+	if lost > 0:
+		game.resources.add("scrap", -lost)
+		lines.append("夜袭还带走了 %d 废料。" % lost)
 
 func _evaluate_milestones(game, lines: Array[String]) -> void:
 	for definition_variant in milestone_defs:
@@ -554,7 +558,7 @@ func _normalize_definitions() -> void:
 	weather_defs = definitions.get("weather", {})
 	if not weather_defs is Dictionary: weather_defs = {}
 	if weather_defs.is_empty():
-		weather_defs = {"晴朗":{"threat_delta":-1, "gather_multiplier":1.05}, "暴雨":{"threat_delta":5, "gather_multiplier":0.8}, "寒冷":{"threat_delta":4, "gather_multiplier":1.0}}
+		weather_defs = {"晴朗":{"threat_delta":-1, "gather_multiplier":1.05, "fuel_extra":0}, "暴雨":{"threat_delta":5, "gather_multiplier":0.8, "fuel_extra":1}, "寒冷":{"threat_delta":4, "gather_multiplier":1.0, "fuel_extra":2}}
 
 func _load_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)

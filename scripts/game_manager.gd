@@ -212,6 +212,8 @@ func choose_event(index: int) -> Dictionary:
 		var choices: Array = events.current_event.get("data", {}).get("choices", [])
 		if index >= 0 and index < choices.size(): choice_id = str(choices[index].get("id", ""))
 	var result := events.resolve_choice(index, self)
+	if result.is_empty():
+		return {"ok":false,"reason":"事件选择无效，事件仍待处理。"}
 	survival.record_event(event_id, choice_id)
 	for line in result: report_lines.append(line)
 	if check_protagonist_health(): return {"ok":true, "reason":"主角生命值归零，游戏结束。"}

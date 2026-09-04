@@ -109,13 +109,13 @@ func _apply_choice_effect(index: int, game) -> Array[String]:
 				game.change_all("morale", 6); game.adjust_relation("inspire", 1); results.append("热食让怒气消散，营地重新有了笑声。")
 		"cache":
 			if choice_id == "salvage":
-				game.resources.add("metal", 3); game.resources.add("medicine", 1)
+				game.resources.add("scrap", 6); game.resources.add("medicine", 1)
 				if game.rng.randf() < 0.35:
 					var victim: Survivor = game.random_alive()
 					if victim != null: victim.apply_change("health", -5); victim.injured = true
 				results.append("补给车里还有可用物资，搜寻的人带着擦伤回来。")
 			else:
-				game.resources.add("metal", 1); results.append("位置已经标记，明天可以带足工具再去。")
+				game.resources.add("scrap", 2); results.append("位置已经标记，明天可以带足工具再去。")
 	return results
 
 func to_dict() -> Dictionary: return {"current_event":current_event}

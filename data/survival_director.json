@@ -44,7 +44,7 @@
       "resource": "food",
       "target": 5,
       "label": "带回 %d 食物",
-      "reward": {"food": 2, "wood": 1},
+      "reward": {"food": 2, "fuel": 1},
       "miss_threat": 4
     },
     {
@@ -53,15 +53,15 @@
       "resource": "wood",
       "target": 4,
       "label": "带回 %d 木材",
-      "reward": {"wood": 1, "metal": 1},
+      "reward": {"wood": 1, "scrap": 2},
       "miss_threat": 3
     },
     {
-      "id": "medicine_run",
+      "id": "scavenge",
       "kind": "resource_gain",
-      "resource": "medicine",
+      "resource": "scrap",
       "target": 2,
-      "label": "带回 %d 药品",
+      "label": "搜集 %d 废料",
       "reward": {"medicine": 1},
       "miss_threat": 4
     },
@@ -70,7 +70,7 @@
       "kind": "morale_min",
       "target": 55,
       "label": "让平均士气保持在 %d",
-      "reward": {"wood": 2},
+      "reward": {"fuel": 2},
       "miss_threat": 3
     },
     {
@@ -96,7 +96,7 @@
       "condition": "days_survived",
       "target": 1,
       "label": "撑过第一个夜晚",
-      "reward": {"food": 1, "wood": 1}
+      "reward": {"food": 1, "fuel": 1}
     },
     {
       "id": "three_days",
@@ -125,7 +125,7 @@
       "resource": "food",
       "target": 25,
       "label": "食物储备达到 25",
-      "reward": {"wood": 2}
+      "reward": {"fuel": 2}
     },
     {
       "id": "low_threat",
@@ -136,11 +136,11 @@
     }
   ],
   "weather": {
-    "晴朗": {"threat_delta": -1, "gather_multiplier": 1.05},
-    "多云": {"threat_delta": 0, "gather_multiplier": 1.0},
-    "浓雾": {"threat_delta": 3, "gather_multiplier": 0.9},
-    "暴雨": {"threat_delta": 5, "gather_multiplier": 0.8},
-    "寒冷": {"threat_delta": 4, "gather_multiplier": 1.0}
+    "晴朗": {"threat_delta": -1, "gather_multiplier": 1.05, "fuel_extra": 0},
+    "多云": {"threat_delta": 0, "gather_multiplier": 1.0, "fuel_extra": 0},
+    "浓雾": {"threat_delta": 3, "gather_multiplier": 0.9, "fuel_extra": 0},
+    "暴雨": {"threat_delta": 5, "gather_multiplier": 0.8, "fuel_extra": 1},
+    "寒冷": {"threat_delta": 4, "gather_multiplier": 1.0, "fuel_extra": 2}
   }
 }
 
