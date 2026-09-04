@@ -10,9 +10,9 @@ func _init() -> void:
 	interaction_range = 30.0
 	interaction_time = 3.5
 	cooldown_time = 16.0
-	# Ruins provide salvage only; stone is intentionally restricted to pebble
+	# Ruins provide medical and metal supplies; stone remains restricted to pebble
 	# interactions so fishing/salvage cannot bypass the gathering chain.
-	reward = {"scrap": 4, "medicine": 1, "metal": 1}
+	reward = {"medicine": 1, "metal": 2}
 	failure_text = "碎玻璃划伤了手，废墟里没有更多东西。"
 	failure_chance = 0.25
 	# Use the pack's existing chest as the salvage marker.

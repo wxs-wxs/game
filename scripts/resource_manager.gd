@@ -1,20 +1,21 @@
 class_name ResourceManager
 extends RefCounted
 
-const RESOURCE_KEYS := ["food", "wood", "medicine", "fuel", "scrap", "stone", "fiber", "cloth", "metal", "water"]
+const RESOURCE_KEYS := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal", "water"]
 const FISH_KEYS := ["fish_carp", "fish_bass", "fish_trout", "fish_eel"]
+const COOKED_FISH_KEYS := ["cooked_fish_carp", "cooked_fish_bass", "cooked_fish_trout", "cooked_fish_eel"]
 const CRAFTED_ITEM_KEYS := ["cooked_food", "bandage", "torch", "trap"]
-const ITEM_KEYS := RESOURCE_KEYS + FISH_KEYS + CRAFTED_ITEM_KEYS
+const ITEM_KEYS := RESOURCE_KEYS + FISH_KEYS + COOKED_FISH_KEYS + CRAFTED_ITEM_KEYS
 const TOOL_KEYS := ["axe", "pickaxe"]
 const BACKPACK_BASE_CAPACITY := 4
 const BACKPACK_UPGRADED_CAPACITY := 12
 const STACK_MAX := 999
-const BACKPACK_COST := {"cloth": 2, "fiber": 4, "scrap": 2}
+const BACKPACK_COST := {"cloth": 2, "fiber": 4, "metal": 1}
 const FISH_DEFINITIONS := {
-	"fish_carp": {"label":"鲤鱼", "food":2},
-	"fish_bass": {"label":"鲈鱼", "food":3},
-	"fish_trout": {"label":"鳟鱼", "food":4},
-	"fish_eel": {"label":"鳗鱼", "food":5}
+	"fish_carp": {"label":"鲤鱼", "cooked_key":"cooked_fish_carp", "cooked_label":"熟鲤鱼", "food":2},
+	"fish_bass": {"label":"鲈鱼", "cooked_key":"cooked_fish_bass", "cooked_label":"熟鲈鱼", "food":3},
+	"fish_trout": {"label":"鳟鱼", "cooked_key":"cooked_fish_trout", "cooked_label":"熟鳟鱼", "food":4},
+	"fish_eel": {"label":"鳗鱼", "cooked_key":"cooked_fish_eel", "cooked_label":"熟鳗鱼", "food":5}
 }
 const TOOL_DEFINITIONS := {
 	"axe": {
@@ -41,8 +42,8 @@ const SOURCE_RULES := {
 	"wood": ["field_branch", "branch", "forest_berries", "forest_tree"]
 }
 
-var amounts: Dictionary = {"food":12, "wood":10, "medicine":3, "fuel":8, "scrap":6, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0, "cooked_food":0, "bandage":0, "torch":0, "trap":0}
-var capacities: Dictionary = {"food":30, "wood":35, "medicine":15, "fuel":25, "scrap":30, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30, "cooked_food":30, "bandage":30, "torch":30, "trap":30}
+var amounts: Dictionary = {"food":12, "wood":10, "medicine":3, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0, "cooked_food":0, "bandage":0, "torch":0, "trap":0, "fish_carp":0, "fish_bass":0, "fish_trout":0, "fish_eel":0, "cooked_fish_carp":0, "cooked_fish_bass":0, "cooked_fish_trout":0, "cooked_fish_eel":0}
+var capacities: Dictionary = {"food":30, "wood":35, "medicine":15, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30, "cooked_food":30, "bandage":30, "torch":30, "trap":30, "fish_carp":30, "fish_bass":30, "fish_trout":30, "fish_eel":30, "cooked_fish_carp":30, "cooked_fish_bass":30, "cooked_fish_trout":30, "cooked_fish_eel":30}
 var total_collected: int = 0
 var tools: Dictionary = {"axe": false, "pickaxe": false}
 var backpack: Dictionary = {}
@@ -175,18 +176,43 @@ func can_collect_rewards(rewards: Dictionary) -> bool:
 		var item := str(key)
 		var amount := maxi(0, int(rewards[key]))
 		if amount == 0: continue
+		if not ITEM_KEYS.has(item): return false
 		var current := int(simulated.get(item, 0))
 		if current + amount > STACK_MAX: return false
+		if int(amounts.get(item, 0)) + amount > int(capacities.get(item, STACK_MAX)): return false
 		if current == 0:
 			used += 1
 			if used > backpack_slot_capacity(): return false
 		simulated[item] = current + amount
 	return true
 
+func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dictionary:
+	if rewards.is_empty():
+		return {"ok":true, "reason":"没有奖励。", "added":{}}
+	if not can_collect_rewards(rewards):
+		return {"ok":false, "reason":"携带空间不足，请先整理背包。", "added":{}}
+	for key in rewards:
+		var id := str(key)
+		if int(rewards[key]) > 0 and not can_collect_from_source(id, source_id):
+			return {"ok":false, "reason":"该来源无法提供此奖励。", "added":{}}
+	var added: Dictionary = {}
+	for key in rewards:
+		var id := str(key)
+		var amount := int(rewards[key])
+		if amount <= 0:
+			continue
+		var actual := collect_from_source(id, amount, source_id)
+		if actual != amount:
+			return {"ok":false, "reason":"奖励领取失败。", "added":{}}
+		added[id] = amount
+	return {"ok":true, "reason":"奖励已领取。", "added":added}
+
 func catch_fish(fish_key: String) -> Dictionary:
 	if not FISH_DEFINITIONS.has(fish_key): return {"ok":false, "reason":"未知鱼类。"}
 	if not can_carry_item(fish_key, 1): return {"ok":false, "reason":"背包没有空格或该鱼已堆满。"}
 	backpack[fish_key] = int(backpack.get(fish_key, 0)) + 1
+	amounts[fish_key] = int(amounts.get(fish_key, 0)) + 1
+	total_collected += 1
 	return {"ok":true, "fish_key":fish_key, "fish_name":fish_name(fish_key), "food_value":fish_food_value(fish_key)}
 
 func fish_name(fish_key: String) -> String:
@@ -198,22 +224,41 @@ func fish_food_value(fish_key: String) -> int:
 func fish_items() -> Array[String]:
 	return FISH_KEYS.duplicate()
 
-func convert_fish_to_food(fish_key: String) -> Dictionary:
+func cooked_fish_key(fish_key: String) -> String:
+	return str(FISH_DEFINITIONS.get(fish_key, {}).get("cooked_key", ""))
+
+func cooked_fish_name(fish_key: String) -> String:
+	return str(FISH_DEFINITIONS.get(fish_key, {}).get("cooked_label", cooked_fish_key(fish_key)))
+
+func _can_replace_with_item(source_key: String, output_key: String) -> bool:
+	if int(amounts.get(output_key, 0)) >= int(capacities.get(output_key, STACK_MAX)): return false
+	if int(backpack.get(output_key, 0)) > 0: return true
+	return backpack_slots_used() - (1 if int(backpack.get(source_key, 0)) == 1 else 0) < backpack_slot_capacity()
+
+func cook_fish(fish_key: String) -> Dictionary:
 	var count := int(backpack.get(fish_key, 0))
 	if count <= 0: return {"ok":false, "reason":"背包中没有这条鱼。"}
-	var food_amount := fish_food_value(fish_key)
-	var food_capacity := int(capacities.get("food", 0))
-	var current_food := int(backpack.get("food", 0))
-	var food_stack_ok := current_food + food_amount <= STACK_MAX
-	var food_slot_ok := current_food > 0 or (backpack_slots_used() - (1 if count == 1 else 0)) < backpack_slot_capacity()
-	if int(amounts.get("food", 0)) >= food_capacity or not food_stack_ok or not food_slot_ok:
-		return {"ok":false, "reason":"背包没有空间存放处理后的食物。"}
+	var output_key := cooked_fish_key(fish_key)
+	if output_key.is_empty() or not _can_replace_with_item(fish_key, output_key): return {"ok":false, "reason":"背包没有空间存放熟鱼。"}
 	backpack[fish_key] = count - 1
-	var before := int(amounts.get("food", 0))
-	amounts["food"] = clampi(before + food_amount, 0, int(capacities.get("food", 0)))
-	var actual := int(amounts["food"]) - before
-	backpack["food"] = int(backpack.get("food", 0)) + actual
-	return {"ok":true, "food":actual, "reason":"已将%s处理成食物 +%d。" % [fish_name(fish_key), actual]}
+	amounts[fish_key] = maxi(0, int(amounts.get(fish_key, 0)) - 1)
+	backpack[output_key] = int(backpack.get(output_key, 0)) + 1
+	amounts[output_key] = int(amounts.get(output_key, 0)) + 1
+	return {"ok":true, "cooked_key":output_key, "reason":"已将%s烤成熟鱼。" % fish_name(fish_key)}
+
+## Compatibility wrapper for callers written before raw/cooked fish were
+## separated. It now produces a species-specific cooked fish item.
+func convert_fish_to_food(fish_key: String) -> Dictionary:
+	return cook_fish(fish_key)
+
+func cook_berries() -> Dictionary:
+	if int(backpack.get("food", 0)) <= 0: return {"ok":false, "reason":"背包中没有浆果。"}
+	if not _can_replace_with_item("food", "cooked_food"): return {"ok":false, "reason":"背包没有空间存放熟浆果。"}
+	backpack["food"] = int(backpack.get("food", 0)) - 1
+	amounts["food"] = maxi(0, int(amounts.get("food", 0)) - 1)
+	backpack["cooked_food"] = int(backpack.get("cooked_food", 0)) + 1
+	amounts["cooked_food"] = int(amounts.get("cooked_food", 0)) + 1
+	return {"ok":true, "cooked_key":"cooked_food", "reason":"已将浆果烤成熟浆果。"}
 
 func spend(cost: Dictionary) -> bool:
 	if not can_afford(cost): return false
@@ -280,10 +325,12 @@ func add_capacity_all(amount: int) -> void:
 
 func display_name(key: String) -> String:
 	if FISH_DEFINITIONS.has(key): return fish_name(key)
-	return {"food":"食物","wood":"木材","medicine":"药品","fuel":"燃料","scrap":"废料","stone":"石料","fiber":"纤维","cloth":"布料","metal":"金属","water":"水","cooked_food":"熟食","bandage":"绷带","torch":"火把","trap":"陷阱","axe":"石斧","pickaxe":"石镐"}.get(key, key)
+	for fish_key in FISH_KEYS:
+		if cooked_fish_key(fish_key) == key: return cooked_fish_name(fish_key)
+	return {"food":"浆果","wood":"木材","medicine":"药品","stone":"石料","fiber":"纤维","cloth":"布料","metal":"金属","water":"水","cooked_food":"熟浆果","bandage":"绷带","torch":"火把","trap":"陷阱","axe":"石斧","pickaxe":"石镐"}.get(key, key)
 
 func compact_text() -> String:
-	return "食%d 木%d 药%d 燃%d 废%d 石%d 纤%d 布%d 金%d 水%d" % [get_amount("food"), get_amount("wood"), get_amount("medicine"), get_amount("fuel"), get_amount("scrap"), get_amount("stone"), get_amount("fiber"), get_amount("cloth"), get_amount("metal"), get_amount("water")]
+	return "浆%d 木%d 药%d 石%d 纤%d 布%d 金%d 水%d" % [get_amount("food"), get_amount("wood"), get_amount("medicine"), get_amount("stone"), get_amount("fiber"), get_amount("cloth"), get_amount("metal"), get_amount("water")]
 
 func tool_definition(tool_id: String) -> Dictionary:
 	var definition = TOOL_DEFINITIONS.get(tool_id, {})

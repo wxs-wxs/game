@@ -241,6 +241,9 @@ func weather_effect(weather_name: String) -> Dictionary:
 	result["label"] = weather_name
 	return result
 
+func gather_multiplier(_weather: String) -> float:
+	return 1.0
+
 func record_action(action_id: String, amount: int = 1) -> void:
 	if action_id.is_empty():
 		return

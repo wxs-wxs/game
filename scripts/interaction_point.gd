@@ -157,31 +157,31 @@ func _complete_interaction() -> Dictionary:
 		return {"ok":false, "message":missing_tools_text(), "failed":true, "locked":true}
 	if not game.resources.can_afford(required_resources):
 		return {"ok":false, "message":game.resources.missing_cost_text(required_resources), "failed":true}
-	if not reward.is_empty() and game.resources.has_method("can_collect_rewards") and not game.resources.can_collect_rewards(reward):
+	if not reward.is_empty() and not game.resources.can_collect_rewards(reward):
 		return {"ok":false, "message":"携带空间不足，请先整理背包。", "failed":true}
-	game.resources.spend(required_resources)
 	var result := perform_interaction()
-	if bool(result.get("ok", false)):
-		if not bool(result.get("failed", false)):
-			for key in reward:
-				var resource_id := str(key)
-				if game.resources.has_method("collect_from_source"):
-					game.resources.collect_from_source(resource_id, int(reward[key]), unique_id)
-				elif game.resources.has_method("add_from_source"):
-					game.resources.add_from_source(resource_id, int(reward[key]), unique_id)
-				else:
-					game.resources.add(resource_id, int(reward[key]))
-		cooldown_remaining = cooldown_time
-		if uses_left > 0: uses_left -= 1
-		if respawn_delay > 0.0:
-			respawn_remaining = respawn_delay
-			hide()
-		game.daily_log.append("%s：%s" % [display_name, str(result.get("message", "完成"))])
-		if game.audio != null:
-			game.audio.play_sfx("interaction_complete" if not bool(result.get("failed", false)) else "interaction_failed")
-			game.audio.play_sfx(_specific_sfx(bool(result.get("failed", false))))
-	else:
+	if not bool(result.get("ok", false)) or bool(result.get("failed", false)):
 		if game.audio != null: game.audio.play_sfx("interaction_failed")
+		return result
+	var interaction_rewards: Dictionary = reward.duplicate(true)
+	var result_rewards = result.get("rewards", {})
+	if result_rewards is Dictionary and not result_rewards.is_empty():
+		interaction_rewards = result_rewards.duplicate(true)
+	if not interaction_rewards.is_empty():
+		var collected: Dictionary = game.resources.collect_rewards_atomic(interaction_rewards, unique_id)
+		if not bool(collected.get("ok", false)):
+			if game.audio != null: game.audio.play_sfx("interaction_failed")
+			return {"ok":false, "message":str(collected.get("reason", "携带空间不足，请先整理背包。")), "failed":true}
+	game.resources.spend(required_resources)
+	cooldown_remaining = cooldown_time
+	if uses_left > 0: uses_left -= 1
+	if respawn_delay > 0.0:
+		respawn_remaining = respawn_delay
+		hide()
+	game.daily_log.append("%s：%s" % [display_name, str(result.get("message", "完成"))])
+	if game.audio != null:
+		game.audio.play_sfx("interaction_complete")
+		game.audio.play_sfx(_specific_sfx(false))
 	return result
 
 func allow_reward_overflow() -> bool:

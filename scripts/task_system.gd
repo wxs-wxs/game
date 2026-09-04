@@ -2,9 +2,11 @@ class_name TaskSystem
 extends RefCounted
 
 var work_data: Dictionary = {}
+var weather_strategy: SurvivalDirector
 
 func _init() -> void:
 	work_data = _load_json("res://data/tasks.json")
+	weather_strategy = SurvivalDirector.new()
 
 func assign(survivor: Survivor, work_name: String) -> bool:
 	if not survivor.alive or not work_data.has(work_name): return false
@@ -26,21 +28,19 @@ func resolve_tick(survivors: Array, resources: ResourceManager, buildings: Build
 		match str(data.get("id", "")):
 			"food":
 				var food_gain := 1 + int(ceil(float(survivor.skill_value("gather")) * 0.65))
-				if weather == "暴雨": food_gain = max(1, food_gain - 1)
 				food_gain += rng.randi_range(0, 1)
-				resources.add("food", food_gain); survivor.add_xp("gather", 1)
-				lines.append("%s 找回 %d 食物" % [survivor.display_name, food_gain])
+				food_gain = maxi(1, int(round(float(food_gain) * weather_strategy.gather_multiplier(weather))))
+				var food_result := resources.collect_rewards_atomic({"food": food_gain})
+				if bool(food_result.get("ok", false)):
+					survivor.add_xp("gather", 1)
+					lines.append("%s 找回 %d 食物" % [survivor.display_name, food_gain])
 			"wood":
 				var wood_gain: int = 1 + survivor.skill_value("gather")
-				if weather == "暴雨": wood_gain = max(1, wood_gain - 1)
-				resources.add("wood", wood_gain); survivor.add_xp("gather", 1)
-				lines.append("%s 收集 %d 木材" % [survivor.display_name, wood_gain])
-			"scrap":
-				var scrap_gain := 1 + int(ceil(float(survivor.skill_value("gather")) * 0.55))
-				resources.add("scrap", scrap_gain)
-				if rng.randf() < 0.18: resources.add("medicine", 1)
-				survivor.add_xp("gather", 1)
-				lines.append("%s 回收 %d 废料" % [survivor.display_name, scrap_gain])
+				wood_gain = maxi(1, int(round(float(wood_gain) * weather_strategy.gather_multiplier(weather))))
+				var wood_result := resources.collect_rewards_atomic({"wood": wood_gain})
+				if bool(wood_result.get("ok", false)):
+					survivor.add_xp("gather", 1)
+					lines.append("%s 收集 %d 木材" % [survivor.display_name, wood_gain])
 			"build":
 				var built := buildings.add_work(survivor.skill_value("build"))
 				if built != "": lines.append("%s 完成 %s" % [survivor.display_name, built])

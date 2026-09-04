@@ -12,7 +12,8 @@ func _init() -> void:
 	interaction_range = 28.0
 	interaction_time = 2.0
 	cooldown_time = 10.0
-	# Berry bushes also yield a small bundle of fallen branches. Keeping the
+	# Raw berries can be eaten immediately or cooked from the backpack. Berry
+	# bushes also yield a small bundle of fallen branches. Keeping the
 	# pickup to two item types means it remains useful with the four-slot starter
 	# carry limit even after a fish has been caught.
 	reward = {"food": 2, "wood": 1}
