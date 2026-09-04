@@ -79,7 +79,7 @@ func begin_day(day_value: int, weather: String, game = null) -> Dictionary:
 	_sync_safety(game)
 	return get_goal_summary(game)
 
-## Resolve the strategy layer after food/fuel/night effects have been applied.
+## Resolve the strategy layer after food/night effects have been applied.
 ## The returned lines are intended for GameManager.daily_log/report_lines.
 func settle_day(game) -> Array[String]:
 	var lines: Array[String] = []
@@ -108,7 +108,7 @@ func settle_day(game) -> Array[String]:
 		if not reward.is_empty():
 			lines.append("目标奖励：%s。" % _reward_text(reward, game))
 		if streak >= 2 and streak % 2 == 0:
-			var streak_reward := {"fuel": 1, "food": 1}
+			var streak_reward := {"wood": 1, "food": 1}
 			_grant_reward(game, streak_reward)
 			lines.append("连胜奖励：补给箱 +%s。" % _reward_text(streak_reward, game))
 	else:
@@ -216,6 +216,13 @@ func get_status(game = null) -> Dictionary:
 		"last_report":last_report.duplicate()
 	}
 
+func event_context(game) -> Dictionary:
+	var built_ids: Array[String] = []
+	if game != null and game.buildings != null:
+		for key in game.buildings.built:
+			built_ids.append(str(key))
+	return {"weather": str(game.weather) if game != null else "", "threat": threat, "built_facilities": built_ids, "recent_actions": action_counts.duplicate(true)}
+
 func status(game = null) -> Dictionary:
 	return get_status(game)
 
@@ -228,7 +235,7 @@ func threat_label() -> String:
 func weather_effect(weather_name: String) -> Dictionary:
 	var info: Dictionary = weather_defs.get(weather_name, {})
 	if info.is_empty():
-		return {"id":weather_name, "label":weather_name, "threat_delta":0, "gather_multiplier":1.0, "fuel_extra":0}
+		return {"id":weather_name, "label":weather_name, "threat_delta":0, "gather_multiplier":1.0}
 	var result: Dictionary = info.duplicate(true)
 	result["id"] = weather_name
 	result["label"] = weather_name
@@ -301,11 +308,15 @@ func from_dict(data: Dictionary) -> void:
 	last_settled_day = int(data.get("last_settled_day", -1))
 	current_goal = data.get("current_goal", {})
 	if not current_goal is Dictionary: current_goal = {}
-	goal_start_amounts = data.get("goal_start_amounts", {})
+	if not current_goal.is_empty():
+		var goal_resource := str(current_goal.get("resource", ""))
+		if not goal_resource.is_empty() and not ResourceManager.RESOURCE_KEYS.has(goal_resource): current_goal = {}
+		elif current_goal.get("reward", {}) is Dictionary: current_goal["reward"] = _filter_resource_values(current_goal.get("reward", {}), true)
+	goal_start_amounts = _filter_resource_values(data.get("goal_start_amounts", {}))
 	if not goal_start_amounts is Dictionary: goal_start_amounts = {}
-	day_resource_gains = data.get("day_resource_gains", {})
+	day_resource_gains = _filter_resource_values(data.get("day_resource_gains", {}))
 	if not day_resource_gains is Dictionary: day_resource_gains = {}
-	last_observed_amounts = data.get("last_observed_amounts", {})
+	last_observed_amounts = _filter_resource_values(data.get("last_observed_amounts", {}))
 	if not last_observed_amounts is Dictionary: last_observed_amounts = {}
 	goal_start_built_count = maxi(0, int(data.get("goal_start_built_count", 0)))
 	goal_start_survivor_count = maxi(0, int(data.get("goal_start_survivor_count", 0)))
@@ -318,6 +329,14 @@ func from_dict(data: Dictionary) -> void:
 	last_report = []
 	for line in data.get("last_report", []): last_report.append(str(line))
 
+func _filter_resource_values(value, allow_stats: bool = false) -> Dictionary:
+	var filtered: Dictionary = {}
+	if not value is Dictionary: return filtered
+	for key in value:
+		var id := str(key)
+		if ResourceManager.RESOURCE_KEYS.has(id) or (allow_stats and id in ["morale", "health", "hunger", "energy"]): filtered[id] = value[key]
+	return filtered
+
 func _snapshot_day(game) -> void:
 	goal_start_amounts = {}
 	day_resource_gains = {}
@@ -327,7 +346,7 @@ func _snapshot_day(game) -> void:
 	goal_start_total_collected = 0
 	if game == null:
 		return
-	for key in ["food", "wood", "medicine", "fuel", "scrap", "stone", "fiber", "cloth", "metal", "water"]:
+	for key in ResourceManager.RESOURCE_KEYS:
 		var amount := int(game.resources.get_amount(key))
 		goal_start_amounts[key] = amount
 		day_resource_gains[key] = 0
@@ -341,7 +360,7 @@ func _snapshot_day(game) -> void:
 func observe_resources(game) -> void:
 	if game == null or game.resources == null:
 		return
-	for key in ["food", "wood", "medicine", "fuel", "scrap", "stone", "fiber", "cloth", "metal", "water"]:
+	for key in ResourceManager.RESOURCE_KEYS:
 		var id := str(key)
 		var amount := int(game.resources.get_amount(id))
 		var previous := int(last_observed_amounts.get(id, amount))
@@ -444,10 +463,6 @@ func _apply_high_threat_incident(game, lines: Array[String]) -> void:
 		victim.apply_change("health", -damage)
 		victim.injured = true
 		lines.append("高威胁事件：%s 在夜袭中受伤（-%d 生命）。" % [victim.display_name, damage])
-	var lost := mini(2, int(game.resources.get_amount("scrap")))
-	if lost > 0:
-		game.resources.add("scrap", -lost)
-		lines.append("夜袭还带走了 %d 废料。" % lost)
 
 func _evaluate_milestones(game, lines: Array[String]) -> void:
 	for definition_variant in milestone_defs:
@@ -528,12 +543,18 @@ func _normalize_definitions() -> void:
 		policies = {"balanced":{"label":"均衡", "description":"保持营地稳定。", "threat_delta":0, "morale_delta":0, "food_save":0, "wood_cost":0, "reward_multiplier":1.0}}
 	goal_pool = definitions.get("goals", [])
 	if not goal_pool is Array: goal_pool = []
+	var filtered_goals: Array = []
+	for goal in goal_pool:
+		if goal is Dictionary and str(goal.get("id", "")) == "week_survivor":
+			continue
+		filtered_goals.append(goal)
+	goal_pool = filtered_goals
 	milestone_defs = definitions.get("milestones", [])
 	if not milestone_defs is Array: milestone_defs = []
 	weather_defs = definitions.get("weather", {})
 	if not weather_defs is Dictionary: weather_defs = {}
 	if weather_defs.is_empty():
-		weather_defs = {"晴朗":{"threat_delta":-1, "gather_multiplier":1.05, "fuel_extra":0}, "暴雨":{"threat_delta":5, "gather_multiplier":0.8, "fuel_extra":1}, "寒冷":{"threat_delta":4, "gather_multiplier":1.0, "fuel_extra":2}}
+		weather_defs = {"晴朗":{"threat_delta":-1, "gather_multiplier":1.05}, "暴雨":{"threat_delta":5, "gather_multiplier":0.8}, "寒冷":{"threat_delta":4, "gather_multiplier":1.0}}
 
 func _load_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)

@@ -131,11 +131,24 @@ func finish_exploration_day() -> Dictionary:
 	return _resolve_night()
 
 func _resolve_night() -> Dictionary:
+	if night_settlement_applied:
+		return {"ok": false, "phase": phase, "reason": "今天已经结算。"}
 	night_settlement_applied = true
+	night_context = {
+		"day": day,
+		"weather": weather,
+		"resource_before": resources.to_dict(),
+		"threat_before": survival.threat,
+		"temperature_before": environment_temperature,
+		"completed_buildings": _canonical_built_ids()
+	}
 	report_lines = _night_settlement()
+	report_lines.append_array(survival.settle_day(self))
 	if check_protagonist_health():
 		return {"ok": true, "phase": phase, "reason": "主角生命值归零，游戏结束。"}
-	phase = PHASE_REPORT
+	var created := events.create_weighted_event(rng, survival.event_context(self))
+	if created.is_empty(): phase = PHASE_REPORT
+	else: phase = PHASE_EVENT
 	return {"ok": true, "phase": phase, "reason": "夜间结算完成。"}
 
 func _finish_exploration_day() -> void:
@@ -167,11 +180,7 @@ func tick(delta: float) -> bool:
 
 func finish_day() -> void:
 	if phase != PHASE_DAY: return
-	phase = PHASE_EVENT
-	report_lines = _night_settlement()
-	report_lines.append_array(survival.settle_day(self))
-	if check_protagonist_health(): return
-	events.create_event(rng)
+	_resolve_night()
 
 func force_finish_day() -> void:
 	if phase != PHASE_DAY: return
