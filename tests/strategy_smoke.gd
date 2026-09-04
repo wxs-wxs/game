@@ -19,7 +19,13 @@ func _init() -> void:
 	var finish_result: Dictionary = game.finish_exploration_day()
 	assert(bool(finish_result.get("ok", false)))
 	if game.phase == GameManager.PHASE_EVENT:
-		assert(bool(game.choose_event(0).get("ok", false)))
+		var choice_index := -1
+		for index in range(2):
+			if game.resources.can_afford(game.events.choice_cost(index)):
+				choice_index = index
+				break
+		assert(choice_index >= 0)
+		assert(bool(game.choose_event(choice_index).get("ok", false)))
 	assert(game.phase == GameManager.PHASE_REPORT)
 	game.continue_from_report()
 	assert(game.day == 2 and game.phase == GameManager.PHASE_MORNING)
