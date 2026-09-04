@@ -20,6 +20,13 @@ func _init() -> void:
 	var world := ExplorationWorld.new()
 	root.add_child(world)
 	world.setup(game)
+	var build = preload("res://scripts/build_mode_controller.gd").new()
+	world.add_child(build)
+	build.setup(world)
+	build.selected_blueprint = "storage_shelf"
+	world.player.position = Vector2(500, 500)
+	build.ghost_position = world.player.position + Vector2(16, 0)
+	assert(not build.confirm_build())
 	var campfire = world.interactions.filter(func(point): return point is CampfirePoint)[0]
 	world.player.position = campfire.position
 	world._process(0.1)

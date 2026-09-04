@@ -86,6 +86,10 @@ func can_place() -> bool:
 	return true
 
 func confirm_build() -> bool:
+	if world != null and world.game != null and world.game.day_return_required:
+		world.game.daily_log.append("建造失败：天色已晚，请先回到床边。")
+		world.interaction_result.emit("天色已晚，请先回到床边。")
+		return false
 	if not can_place():
 		if world != null and world.game.audio != null: world.game.audio.play_sfx("resource_shortage")
 		if world != null: world.interaction_result.emit("无法建造：材料、技能或位置不满足。")
