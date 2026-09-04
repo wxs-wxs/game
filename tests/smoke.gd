@@ -98,7 +98,27 @@ func _init() -> void:
 	game.from_dict(old_data)
 	assert(game.resources.get_amount("stone") == 4)
 	var doomed := GameManager.new(); doomed.start_exploration(); doomed.get_protagonist().health = 1; doomed.get_protagonist().hunger = 0; doomed.resources.amounts["food"] = 0; doomed.day_return_required = true; var doomed_result: Dictionary = doomed.finish_exploration_day(); assert(bool(doomed_result.get("ok", false))); assert(doomed.phase == GameManager.PHASE_ENDED and not doomed.won)
-	var long_run := GameManager.new(); long_run.start_exploration(); long_run.day = 7; long_run.day_return_required = true; var long_result: Dictionary = long_run.finish_exploration_day(); assert(bool(long_result.get("ok", false))); assert(long_run.phase == GameManager.PHASE_REPORT and not long_run.won); long_run.continue_from_report(); assert(long_run.day == 8 and long_run.phase == GameManager.PHASE_MORNING)
+	var long_run := GameManager.new(); long_run.start_exploration()
+	for expected_day in range(1, 4):
+		long_run.day_return_required = true
+		var long_result: Dictionary = long_run.finish_exploration_day()
+		assert(bool(long_result.get("ok", false)))
+		if long_run.phase == GameManager.PHASE_EVENT:
+			var choice_index := _first_affordable_choice(long_run)
+			assert(choice_index >= 0)
+			var chosen: Dictionary = long_run.choose_event(choice_index)
+			assert(bool(chosen.get("ok", false)))
+		assert(long_run.phase == GameManager.PHASE_REPORT)
+		assert(not long_run.won)
+		long_run.continue_from_report()
+		assert(long_run.day == expected_day + 1 and long_run.phase == GameManager.PHASE_MORNING)
+		long_run.start_exploration()
 	var zero_health := GameManager.new(); zero_health.start_exploration(); zero_health.get_protagonist().health = 0; zero_health.advance_exploration(0.1); assert(zero_health.phase == GameManager.PHASE_ENDED and not zero_health.won and zero_health.end_reason.contains("生命值归零"))
 	print("SMOKE_OK audio=%s indoor=%s build_xp=%d" % [audio.current_music, world.is_inside, game.construction_skill.experience])
 	quit()
+
+func _first_affordable_choice(game: GameManager) -> int:
+	for index in range(2):
+		if game.resources.can_afford(game.events.choice_cost(index)):
+			return index
+	return -1
