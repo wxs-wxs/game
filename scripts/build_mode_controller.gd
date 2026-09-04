@@ -16,6 +16,7 @@ const PLACEMENT_OFFSETS := [
 	Vector2(-16, -16), Vector2(-8, -24), Vector2(8, -24), Vector2(16, -16),
 	Vector2(8, 0), Vector2(-8, 0), Vector2(0, 8), Vector2(0, -8)
 ]
+const CAMP_BUILD_ZONE := Rect2(96, 112, 128, 80)
 
 func setup(manager) -> void: world = manager; set_process(true)
 
@@ -58,7 +59,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func cycle_blueprint() -> void:
 	if world == null or world.game == null or world.game.buildings == null: return
 	var choices: Array[String] = []
-	for definition in world.game.buildings.catalog("exploration"):
+	for definition in world.game.buildings.construction_catalog():
 		var id := str(definition.get("id", ""))
 		if world.game.buildings.is_unlocked(id, world.game.construction_skill.level) and not world.game.buildings.has(id): choices.append(id)
 	if choices.is_empty(): return
@@ -73,6 +74,7 @@ func can_place() -> bool:
 	var defs: Dictionary = world.game.buildings.definitions
 	if not defs.has(selected_blueprint) or not world.game.buildings.is_unlocked(selected_blueprint, world.game.construction_skill.level): return false
 	var definition: Dictionary = defs[selected_blueprint]
+	if not _is_legal_placement_zone(definition, ghost_position): return false
 	if int(definition.get("required_skill_level", 1)) > world.game.construction_skill.level: return false
 	if not world.game.resources.can_afford(definition.get("cost", {})): return false
 	if world.player.global_position.distance_to(ghost_position) > 34.0: return false
@@ -85,6 +87,11 @@ func can_place() -> bool:
 			if hit.get("collider") is StaticBody2D: return false
 	return true
 
+func _is_legal_placement_zone(definition: Dictionary, position: Vector2) -> bool:
+	var placement := str(definition.get("placement", "camp"))
+	if placement == "world": return true
+	return placement == "camp" and CAMP_BUILD_ZONE.has_point(position)
+
 func confirm_build() -> bool:
 	if world != null and world.game != null and world.game.day_return_required:
 		world.game.daily_log.append("建造失败：天色已晚，请先回到床边。")
@@ -95,12 +102,13 @@ func confirm_build() -> bool:
 		if world != null: world.interaction_result.emit("无法建造：材料、技能或位置不满足。")
 		return false
 	var definition: Dictionary = world.game.buildings.definitions[selected_blueprint]
-	var started: Dictionary = world.game.buildings.start_world_project(selected_blueprint, ghost_position, world.game.resources, world.game.construction_skill.level)
+	var started: Dictionary = world.game.buildings.start_unified_project(selected_blueprint, ghost_position, world.game.resources, world.game.construction_skill.level)
 	if not bool(started.get("ok", false)):
 		world.game.daily_log.append("建造失败：%s" % str(started.get("reason", "无法建造")))
 		world.interaction_result.emit(str(started.get("reason", "无法建造")))
 		return false
-	site = preload("res://scripts/construction_site.gd").new(); world.add_child(site); site.position = ghost_position; site.setup(world.game, selected_blueprint, world.game.construction_skill.build_time(float(definition.get("build_time", 5.0))))
+	var project: Dictionary = started.get("project", {})
+	site = preload("res://scripts/construction_site.gd").new(); world.add_child(site); site.position = ghost_position; site.setup(world.game, selected_blueprint, float(project.get("required", definition.get("build_time", 5.0))))
 	world.game.daily_log.append("建造开始：%s。" % str(definition.get("name", selected_blueprint)))
 	world.interaction_result.emit("开始建造 %s" % str(definition.get("name", selected_blueprint)))
 	active = false; queue_redraw(); return true

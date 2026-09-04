@@ -133,14 +133,16 @@ func setup(manager: GameManager) -> void:
 
 func _restore_construction_sites() -> void:
 	if game == null or game.buildings == null: return
-	for id in game.buildings.world_projects:
-		var project: Dictionary = game.buildings.world_projects[id]
-		var site := preload("res://scripts/construction_site.gd").new()
-		add_child(site)
-		var saved_position: Variant = project.get("position", [game.outdoor_position.x, game.outdoor_position.y])
-		if saved_position is Array and saved_position.size() >= 2: site.position = Vector2(float(saved_position[0]), float(saved_position[1]))
-		site.setup(game, str(id), float(project.get("required", 1.0)))
-		site.progress = float(project.get("progress", 0.0))
+	var project: Dictionary = game.buildings.active_construction()
+	if project.is_empty(): return
+	var id := str(project.get("id", ""))
+	if id.is_empty(): return
+	var site := preload("res://scripts/construction_site.gd").new()
+	add_child(site)
+	var saved_position: Variant = project.get("position", [game.outdoor_position.x, game.outdoor_position.y])
+	if saved_position is Array and saved_position.size() >= 2: site.position = Vector2(float(saved_position[0]), float(saved_position[1]))
+	site.setup(game, str(id), float(project.get("required", 1.0)))
+	site.progress = float(project.get("progress", 0.0))
 
 func _process(delta: float) -> void:
 	# Keep the map atmosphere alive independently from the simulation clock. The

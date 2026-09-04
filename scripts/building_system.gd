@@ -10,6 +10,8 @@ var definitions: Dictionary = {}
 var unlocked: Array[String] = []
 var built: Dictionary = {}
 var active_project: Dictionary = {}
+# Kept as a read-only compatibility surface for older save/tests. New projects
+# are always represented by active_project.
 var world_projects: Dictionary = {}
 var effect_applied: Dictionary = {}
 var guard_power: int = 0
@@ -40,6 +42,17 @@ func catalog(group: String = "") -> Array[Dictionary]:
 			result.append(definition.duplicate(true))
 	return result
 
+func construction_catalog() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for key in definitions.keys():
+		result.append(definitions[key].duplicate(true))
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("id", "")) < str(b.get("id", "")))
+	return result
+
+func active_construction() -> Dictionary:
+	return active_project.duplicate(true)
+
 func get_definition(building_id: String) -> Dictionary:
 	var value = definitions.get(building_id, {})
 	return value.duplicate(true) if value is Dictionary else {}
@@ -62,48 +75,56 @@ func available(skill_level: int) -> Array[String]:
 	return result
 
 func start_project(building_id: String, resources: ResourceManager, skill_level: int = 99) -> Dictionary:
+	return start_unified_project(building_id, Vector2.ZERO, resources, skill_level)
+
+func start_unified_project(building_id: String, position: Vector2, resources: ResourceManager, skill_level: int) -> Dictionary:
 	if built.has(building_id): return {"ok":false, "reason":"设施已经建成"}
-	if not active_project.is_empty() or not world_projects.is_empty(): return {"ok":false, "reason":"已有建造项目"}
+	if not active_project.is_empty(): return {"ok":false, "reason":"已有建造项目"}
 	var definition := get_definition(building_id)
 	if definition.is_empty(): return {"ok":false, "reason":"未知设施"}
 	if not is_unlocked(building_id, skill_level): return {"ok":false, "reason":"技能等级不足或设施尚未解锁"}
-	var cost: Dictionary = definition.get("cost", {})
+	var cost: Dictionary = definition.get("cost", {}).duplicate(true)
 	if not resources.can_afford(cost): return {"ok":false, "reason":resources.missing_cost_text(cost)}
 	if not resources.spend(cost): return {"ok":false, "reason":"材料扣除失败"}
-	active_project = {"id":building_id, "progress":0, "required":int(definition.get("work", definition.get("build_time", 1.0)))}
-	return {"ok":true, "reason":"开始建造 %s" % str(definition.get("name", building_id))}
+	var duration := maxf(0.5, float(definition.get("build_time", definition.get("work", 1.0))))
+	var required := duration * (1.0 - 0.05 * float(maxi(1, skill_level) - 1))
+	active_project = {"id":building_id, "position":[position.x, position.y], "progress":0.0, "required":maxf(0.5, required), "cost":cost, "duration":duration}
+	return {"ok":true, "reason":"开始建造 %s" % str(definition.get("name", building_id)), "project":active_project.duplicate(true)}
 
 func add_work(amount: int) -> String:
 	last_completed_id = ""
 	if active_project.is_empty(): return ""
-	active_project["progress"] = int(active_project.get("progress", 0)) + maxi(0, amount)
-	if int(active_project["progress"]) < int(active_project.get("required", 1)): return ""
 	var building_id := str(active_project.get("id", ""))
-	active_project = {}
-	return complete(building_id)
+	if not advance_active_project(float(maxi(0, amount))): return ""
+	return building_id
 
 func start_world_project(building_id: String, position: Vector2, resources: ResourceManager, skill_level: int) -> Dictionary:
-	if built.has(building_id) or world_projects.has(building_id): return {"ok":false, "reason":"设施已经建成或正在建造"}
-	if not active_project.is_empty() or not world_projects.is_empty(): return {"ok":false, "reason":"已有建造项目"}
-	var definition := get_definition(building_id)
-	if definition.is_empty(): return {"ok":false, "reason":"未知设施"}
-	if str(definition.get("placement", "camp")) != "world": return {"ok":false, "reason":"该设施必须在营地规划"}
-	if not is_unlocked(building_id, skill_level): return {"ok":false, "reason":"技能等级不足或设施尚未解锁"}
-	var cost: Dictionary = definition.get("cost", {})
-	if not resources.can_afford(cost): return {"ok":false, "reason":resources.missing_cost_text(cost)}
-	if not resources.spend(cost): return {"ok":false, "reason":"材料扣除失败"}
-	world_projects[building_id] = {"id":building_id, "position":[position.x, position.y], "progress":0.0, "required":float(definition.get("build_time", 1.0))}
-	return {"ok":true, "reason":"开始建造 %s" % str(definition.get("name", building_id)), "project":world_projects[building_id]}
+	return start_unified_project(building_id, position, resources, skill_level)
 
 func advance_world_project(building_id: String, delta: float) -> bool:
-	if not world_projects.has(building_id): return false
-	var project: Dictionary = world_projects[building_id]
-	project["progress"] = minf(float(project.get("required", 1.0)), float(project.get("progress", 0.0)) + maxf(0.0, delta))
-	world_projects[building_id] = project
-	if float(project["progress"]) < float(project.get("required", 1.0)): return false
-	world_projects.erase(building_id)
-	complete(building_id)
+	if active_project.is_empty() or str(active_project.get("id", "")) != building_id: return false
+	return advance_active_project(delta)
+
+func advance_active_project(delta: float) -> bool:
+	if active_project.is_empty(): return false
+	active_project["progress"] = minf(float(active_project.get("required", 1.0)), float(active_project.get("progress", 0.0)) + maxf(0.0, delta))
+	if float(active_project["progress"]) < float(active_project.get("required", 1.0)): return false
+	var completed_id := str(active_project.get("id", ""))
+	active_project = {}
+	world_projects = {}
+	complete(completed_id)
 	return true
+
+func cancel_active_project(resources: ResourceManager) -> Dictionary:
+	if active_project.is_empty(): return {"ok":false, "reason":"当前没有施工项目。"}
+	var project := active_project.duplicate(true)
+	var cost: Dictionary = project.get("cost", {})
+	if cost.is_empty(): cost = get_definition(str(project.get("id", ""))).get("cost", {})
+	for key in cost:
+		resources.add(str(key), int(cost[key]))
+	active_project = {}
+	world_projects = {}
+	return {"ok":true, "reason":"已取消建造并返还材料。", "project":project}
 
 func complete(building_id: String) -> String:
 	last_completed_id = ""
@@ -115,9 +136,7 @@ func complete(building_id: String) -> String:
 func has(building_id: String) -> bool: return int(built.get(building_id, 0)) > 0
 func rest_bonus() -> int: return 4 if has("bed") else 0
 func clinic_bonus() -> int: return 2 if has("clinic") else 0
-func fuel_discount() -> int: return 1 if has("campfire") else 0
-func cold_fuel_discount() -> int: return 1 if has("fire_basin") else 0
-func indoor_cold_damage_reduction() -> int: return 2 if has("fire_basin") else 0
+func warmth_bonus() -> float: return 4.0 if has("fire_basin") else 0.0
 func attack_protection() -> int: return (2 if has("fence") else 0) + int(guard_power / 2)
 func capacity_bonus() -> int: return 10 if has("shed") else 0
 func has_workbench() -> bool: return has("workbench")
@@ -133,9 +152,6 @@ func project_text() -> String:
 	if not active_project.is_empty():
 		var definition := get_definition(str(active_project.get("id", "")))
 		return "%s %d/%d" % [definition.get("name", "设施"), int(active_project.get("progress", 0)), int(active_project.get("required", 1))]
-	for key in world_projects:
-		var project: Dictionary = world_projects[key]
-		return "%s %.1f/%.1f" % [get_definition(str(key)).get("name", "设施"), float(project.get("progress", 0.0)), float(project.get("required", 1.0))]
 	return "无建造项目"
 
 func to_dict() -> Dictionary:
@@ -155,7 +171,10 @@ func from_dict(data: Dictionary) -> void:
 	var saved_active = data.get("active_project", {})
 	active_project = saved_active if saved_active is Dictionary else {}
 	var saved_world = data.get("world_projects", {})
-	world_projects = saved_world if saved_world is Dictionary else {}
+	world_projects = {}
+	if active_project.is_empty() and saved_world is Dictionary and not saved_world.is_empty():
+		var legacy_project: Dictionary = saved_world.values()[0]
+		if legacy_project is Dictionary: active_project = legacy_project.duplicate(true)
 	var saved_effects = data.get("effect_applied", {})
 	effect_applied = saved_effects if saved_effects is Dictionary else {}
 	guard_power = int(data.get("guard_power", 0)); last_completed_id = str(data.get("last_completed_id", ""))

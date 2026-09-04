@@ -26,6 +26,7 @@ var clock_icon_label: Label
 var clock_label: Label
 var weather_icon_label: Label
 var weather_label: Label
+var temperature_label: Label
 var threat_label: Label
 var threat_icon_label: Label
 var threat_progress_bar: ProgressBar
@@ -41,6 +42,7 @@ var backpack_content_label: Label
 var backpack_close_button: Button
 var backpack_craft_button: Button
 var backpack_process_fish_button: Button
+var backpack_cook_berries_button: Button
 var backpack_slots: Array[Dictionary] = []
 var fish_process_panel: Panel
 var fish_process_close_button: Button
@@ -65,6 +67,13 @@ var axe_action_button: Button
 var pickaxe_action_button: Button
 var axe_icon: TextureRect
 var pickaxe_icon: TextureRect
+var build_selection_panel: Panel
+var build_selection_dim: ColorRect
+var build_selection_hint: Label
+var facility_catalog_label: Label
+var facility_buttons: Dictionary = {}
+var build_tool_buttons: Dictionary = {}
+var build_tool_status_labels: Dictionary = {}
 var shortcut_button: Button
 var shortcut_panel: Panel
 var shortcut_dim: ColorRect
@@ -81,6 +90,8 @@ var _last_prompt := ""
 var _backpack_open := false
 var _storage_open := false
 var _fish_process_open := false
+var _build_selection_open := false
+var _build_selection_was_paused := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
@@ -103,18 +114,14 @@ const ICON_PLAYER := preload("res://assets/player_character_sheet.png")
 const ICON_FOOD := preload("res://assets/art/ninja_adventure/Items/Food/Fish.png")
 const ICON_AXE := preload("res://assets/art/ninja_adventure/Items/Tool/Axe.png")
 const ICON_PICKAXE := preload("res://assets/art/ninja_adventure/Items/Tool/Pickaxe.png")
-const ICON_BAG := preload("res://assets/art/ninja_adventure/Items/Object/Bag.png")
-const ICON_FLAG := preload("res://assets/art/ninja_adventure/Backgrounds/Animated/Flag/FlagBrown16x16.png")
 const ICON_CHEST := preload("res://assets/art/ninja_adventure/Items/Treasure/BigTreasureChest.png")
-const RAIL_ICON_TEXTURES := [ICON_BAG, ICON_PICKAXE, ICON_AXE, ICON_FLAG, ICON_CHEST, ICON_BAG, null]
-const RESOURCE_ICON_TINTS := [Color("f2ca72"), Color("9dc77c"), Color("e58b6a"), Color("e9a66d"), Color("b6c6b5"), Color("b995c4"), Color("7eb8b8"), Color("d8bb77"), Color("f2ca72")]
+const RESOURCE_ICON_TINTS := [Color("f2ca72"), Color("9dc77c"), Color("e58b6a"), Color("b6c6b5"), Color("7eb8b8"), Color("d8bb77"), Color("f2ca72")]
 const TOP_LEFT_CHIP_POSITION := Vector2(12, 12)
 const TOP_LEFT_CHIP_SIZE := Vector2(210, 30)
 const THREAT_CHIP_POSITION := Vector2(405, 12)
 const THREAT_CHIP_SIZE := Vector2(150, 30)
 const RESOURCE_CHIP_POSITION := Vector2(630, 12)
 const RESOURCE_CHIP_SIZE := Vector2(318, 42)
-const RIGHT_RAIL_X := 916
 
 func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	game = manager
@@ -123,6 +130,8 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	_backpack_open = false
 	_storage_open = false
 	_fish_process_open = false
+	_build_selection_open = false
+	_build_selection_was_paused = false
 	_shortcut_open = false
 	_log_open = false
 	message_until = 0.0
@@ -152,6 +161,8 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 			world.storage_open_requested.connect(_on_storage_open_requested)
 		if not world.fish_processing_requested.is_connected(_on_fish_processing_requested):
 			world.fish_processing_requested.connect(_on_fish_processing_requested)
+		if not world.tool_selection_requested.is_connected(_on_tool_selection_requested):
+			world.tool_selection_requested.connect(_on_tool_selection_requested)
 	refresh()
 
 func _configure_pixel_font() -> void:
@@ -187,6 +198,11 @@ func _clear_hud() -> void:
 	pickaxe_action_button = null
 	axe_icon = null
 	pickaxe_icon = null
+	build_selection_panel = null
+	build_selection_dim = null
+	build_selection_hint = null
+	build_tool_buttons.clear()
+	build_tool_status_labels.clear()
 	_survivor_meter_bars.clear()
 	_resource_badges.clear()
 	recipe_buttons.clear()
@@ -196,6 +212,7 @@ func _clear_hud() -> void:
 	backpack_close_button = null
 	backpack_craft_button = null
 	backpack_process_fish_button = null
+	backpack_cook_berries_button = null
 	backpack_slots.clear()
 	fish_process_panel = null
 	fish_process_close_button = null
@@ -206,6 +223,7 @@ func _clear_hud() -> void:
 	storage_rows.clear()
 	clock_icon_label = null
 	weather_icon_label = null
+	temperature_label = null
 	threat_icon_label = null
 	survivor_avatar_sprite = null
 	shortcut_button = null
@@ -287,10 +305,16 @@ func _build_hud() -> void:
 	threat_label = _label_in(threat_chip, Vector2(6, 6), Vector2(138, 18), "", 3, TEXT_WARN)
 	threat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
+	var temperature_chip := _panel(Vector2(240, 12), Vector2(150, 30), PANEL_DARK, hud)
+	temperature_chip.name = "TemperatureChip"
+	temperature_chip.clip_contents = true
+	temperature_label = _label_in(temperature_chip, Vector2(6, 6), Vector2(138, 18), "", 3, PixelTheme.TEXT_WATER)
+	temperature_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
 	var resource_chip := _panel(RESOURCE_CHIP_POSITION, RESOURCE_CHIP_SIZE, PANEL_DARK, hud)
 	resource_chip.name = "ResourceChip"
 	resource_chip.clip_contents = true
-	var resource_keys := ["food", "wood", "medicine", "fuel", "stone", "scrap", "fiber", "cloth", "metal"]
+	var resource_keys := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal"]
 	for index in range(resource_keys.size()):
 		var slot_x := 15 + index * 32
 		var badge := _label_in(resource_chip, Vector2(slot_x, 17), Vector2(32, 23), "", 3, RESOURCE_ICON_TINTS[index])
@@ -314,15 +338,15 @@ func _build_hud() -> void:
 	shortcut_button.add_theme_stylebox_override("pressed", _button_style(Color("152527", 0.98), UI_PANEL_TEXTURE))
 	shortcut_button.pressed.connect(_toggle_shortcut_panel)
 
-	# Mouse actions remain available as icon-only buttons; keyboard shortcuts
-	# stay functional but no longer consume visible HUD space.
-	backpack_button = _rail_button(0, "", "查看背包", toggle_backpack)
-	build_button = _rail_button(1, "", "建造模式", toggle_build_mode)
-	upgrade_button = _rail_button(2, "", "升级小屋", upgrade_house)
-	policy_button = _rail_button(3, "", "切换营地政策", cycle_policy)
-	save_button = _rail_button(4, "", "保存游戏", save_game)
-	load_button = _rail_button(5, "", "读取存档", load_game)
-	pause_button = _rail_button(6, "Ⅱ", "暂停菜单", toggle_pause_menu)
+	# Exploration actions are keyboard-first. Keep these fields available for
+	# compatibility with older callers, but do not create a permanent right rail.
+	backpack_button = null
+	build_button = null
+	upgrade_button = null
+	policy_button = null
+	save_button = null
+	load_button = null
+	pause_button = null
 
 	# The survivor card uses a two-column meter grid: identity stays on one clean
 	# header line and the four changing values remain aligned beneath it.
@@ -378,20 +402,14 @@ func _build_hud() -> void:
 	objective_shortcut_button.tooltip_text = "查看快捷键"
 	objective_shortcut_button.pressed.connect(_toggle_shortcut_panel)
 
-	# Tool/context slots anchor the bottom center. The first two slots are also
-	# useful shortcuts for crafting when a tool has not been made yet.
-	tool_bar = _panel(Vector2(403, 480), Vector2(154, 48), PANEL_DARK, hud)
-	tool_bar.name = "ToolBar"
-	axe_action_button = _button_in(tool_bar, Vector2(6, 4), Vector2(68, 40), "")
-	axe_action_button.tooltip_text = "制作石斧：石料 2 + 木材 3"
-	axe_action_button.pressed.connect(craft_axe)
-	pickaxe_action_button = _button_in(tool_bar, Vector2(80, 4), Vector2(68, 40), "")
-	pickaxe_action_button.tooltip_text = "制作石镐：石料 3 + 木材 2"
-	pickaxe_action_button.pressed.connect(craft_pickaxe)
-	axe_icon = _add_button_icon(axe_action_button, ICON_AXE)
-	pickaxe_icon = _add_button_icon(pickaxe_action_button, ICON_PICKAXE)
-	axe_icon.position = Vector2(26, 12)
-	pickaxe_icon.position = Vector2(26, 12)
+	# Tool construction is selected explicitly after pressing B. The old
+	# bottom-center icon buttons were ambiguous and duplicated the build flow.
+	tool_bar = null
+	axe_action_button = null
+	pickaxe_action_button = null
+	axe_icon = null
+	pickaxe_icon = null
+	_build_tool_selection_panel()
 
 	# Context prompt is created once and only shown when a point is nearby.
 	var prompt_panel := _panel(Vector2(300, 432), Vector2(360, 26), PANEL_DARK, hud)
@@ -430,6 +448,151 @@ func _build_hud() -> void:
 	_build_storage_panel()
 	_build_shortcut_panel()
 	_build_log_panel()
+
+func _build_tool_selection_panel() -> void:
+	build_selection_dim = ColorRect.new()
+	build_selection_dim.position = Vector2.ZERO
+	build_selection_dim.size = VIEW_SIZE
+	build_selection_dim.color = Color("081013", 0.58)
+	build_selection_dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	build_selection_dim.name = "BuildSelectionDim"
+	build_selection_dim.z_index = 40
+	hud.add_child(build_selection_dim)
+
+	build_selection_panel = _panel(Vector2(168, 30), Vector2(624, 480), PANEL_MID, hud)
+	build_selection_panel.name = "BuildSelectionPanel"
+	build_selection_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	build_selection_panel.z_index = 41
+	_label_in(build_selection_panel, Vector2(30, 20), Vector2(300, 24), "选择建造内容", 9, TEXT_ACCENT)
+	build_selection_hint = _label_in(build_selection_panel, Vector2(30, 50), Vector2(444, 18), "选择工具后即可制作", 4, TEXT_MUTED)
+	build_selection_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_build_tool_card("axe", "石斧", ICON_AXE, "石料 2  ·  木材 3", Vector2(30, 80))
+	_build_tool_card("pickaxe", "石镐", ICON_PICKAXE, "石料 3  ·  木材 2", Vector2(264, 80))
+	if game != null and game.buildings != null:
+		for index in range(game.buildings.construction_catalog().size()):
+			var definition: Dictionary = game.buildings.construction_catalog()[index]
+			var card := _button_in(build_selection_panel, Vector2(30 + (index % 3) * 174, 226 + (index / 3) * 54), Vector2(164, 48), "")
+			card.name = "FacilityBuildCard_%s" % str(definition.get("id", ""))
+			card.pressed.connect(_select_facility_for_build.bind(str(definition.get("id", ""))))
+			facility_buttons[str(definition.get("id", ""))] = card
+
+	var facility_button := _button_in(build_selection_panel, Vector2(30, 400), Vector2(290, 32), "进入设施建造")
+	facility_button.name = "FacilityBuildButton"
+	facility_button.tooltip_text = "选择并放置营地设施"
+	facility_button.pressed.connect(_enter_facility_build_mode)
+	var close := _button_in(build_selection_panel, Vector2(338, 400), Vector2(196, 32), "关闭")
+	close.name = "BuildSelectionCloseButton"
+	close.tooltip_text = "关闭建造选择"
+	close.pressed.connect(_close_build_selection)
+	build_selection_dim.visible = false
+	build_selection_panel.visible = false
+
+func _build_tool_card(tool_id: String, label_text: String, icon_texture: Texture2D, cost_text: String, pos: Vector2) -> void:
+	var card := _button_in(build_selection_panel, pos, Vector2(210, 138), "")
+	card.name = "BuildToolButton_%s" % tool_id
+	card.tooltip_text = "制作%s" % label_text
+	card.pressed.connect(_select_tool_and_craft.bind(tool_id))
+	var icon := _icon(Vector2(97, 10), Vector2(16, 16), icon_texture, card)
+	icon.name = "Icon"
+	var name_label := _label_in(card, Vector2(12, 38), Vector2(186, 20), label_text, 6, TEXT_ACCENT)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var cost_label := _label_in(card, Vector2(12, 65), Vector2(186, 18), cost_text, 3, TEXT_MUTED)
+	cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var status_label := _label_in(card, Vector2(12, 94), Vector2(186, 18), "", 3, TEXT_MAIN)
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	build_tool_buttons[tool_id] = card
+	build_tool_status_labels[tool_id] = status_label
+
+func _refresh_build_selection() -> void:
+	if build_selection_panel == null or game == null or game.resources == null:
+		return
+	var resources = game.resources
+	var workbench_ready := bool(resources.workbench_available)
+	for tool_id in ["axe", "pickaxe"]:
+		var button: Button = build_tool_buttons.get(tool_id)
+		var status_label: Label = build_tool_status_labels.get(tool_id)
+		if button == null or status_label == null:
+			continue
+		var status: Dictionary = resources.tool_status(tool_id) if resources.has_method("tool_status") else {}
+		var owned := bool(status.get("owned", resources.has_tool(tool_id) if resources.has_method("has_tool") else false))
+		var can_craft := bool(status.get("can_craft", false))
+		button.disabled = owned or not can_craft
+		if owned:
+			status_label.text = "已拥有"
+			status_label.add_theme_color_override("font_color", TEXT_ACCENT)
+		elif not workbench_ready:
+			status_label.text = "需要简易工作台"
+			status_label.add_theme_color_override("font_color", TEXT_WARN)
+		elif can_craft:
+			status_label.text = "可制作"
+			status_label.add_theme_color_override("font_color", TEXT_ACCENT)
+		else:
+			status_label.text = "材料不足"
+			status_label.add_theme_color_override("font_color", TEXT_WARN)
+	if build_selection_hint != null:
+		build_selection_hint.text = "先建造简易工作台" if not workbench_ready else "选择工具后即可制作，或进入设施建造"
+	if game.buildings != null:
+		for definition: Dictionary in game.buildings.construction_catalog():
+			var id := str(definition.get("id", ""))
+			var status: Dictionary = game.construction_status(id)
+			var state := str(status.get("state", "locked"))
+			var state_text: String = str({"completed":"已完成", "building":"建造中", "locked":"锁定", "materials":"缺材料", "available":"可建造"}.get(state, state))
+			var card: Button = facility_buttons.get(id)
+			if card != null:
+				card.text = "%s\n%s  %.1fs  Lv.%d  %s" % [str(definition.get("name", id)), _cost_text(definition.get("cost", {})), float(definition.get("build_time", 0.0)), int(definition.get("required_skill_level", 1)), state_text]
+				card.disabled = state in ["completed", "building", "locked", "materials"]
+
+func _select_facility_for_build(building_id: String) -> void:
+	if world == null or world.build_mode == null: return
+	world.build_mode.selected_blueprint = building_id
+	_enter_facility_build_mode()
+
+func _open_build_selection() -> void:
+	if _build_selection_open:
+		return
+	if world != null and world.build_mode != null and world.build_mode.active:
+		world.build_mode.active = false
+	_build_selection_open = true
+	if game != null and game.time != null:
+		_build_selection_was_paused = bool(game.time.paused)
+		game.time.paused = true
+	_refresh_build_selection()
+	refresh()
+
+func _close_build_selection() -> void:
+	if not _build_selection_open:
+		return
+	_build_selection_open = false
+	if game != null and game.time != null:
+		game.time.paused = _build_selection_was_paused
+	refresh()
+
+func _select_tool_and_craft(tool_id: String) -> void:
+	if game == null or game.resources == null:
+		return
+	var result: Dictionary
+	if tool_id == "axe":
+		result = game.craft_axe()
+	else:
+		result = game.craft_pickaxe()
+	var ok := bool(result.get("ok", false))
+	var reason := str(result.get("reason", "制作失败。"))
+	if ok:
+		_close_build_selection()
+		_show_message(reason, 2.5)
+	else:
+		_show_message(reason, 2.5)
+	_refresh_build_selection()
+	refresh()
+
+func _enter_facility_build_mode() -> void:
+	_close_build_selection()
+	if world == null or world.build_mode == null:
+		return
+	world.build_mode.toggle()
+	if world.build_mode.active:
+		_update_build_prompt()
+	refresh()
 
 func _build_pause_panel() -> void:
 	pause_dim = ColorRect.new()
@@ -478,22 +641,28 @@ func _build_backpack_panel() -> void:
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var item_icon := _icon(Vector2(50, 6), Vector2(32, 32), ICON_CHEST, cell)
 		item_icon.visible = false
-		var item_label := _label_in(cell, Vector2(9, 42), Vector2(114, 18), "空", 5, TEXT_MAIN)
+		var item_label := _label_in(cell, Vector2(9, 42), Vector2(80, 18), "空", 5, TEXT_MAIN)
 		item_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		item_label.clip_text = true
 		var count_label := _label_in(cell, Vector2(93, 6), Vector2(30, 18), "", 6, TEXT_ACCENT)
 		count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		backpack_slots.append({"cell":cell, "item":item_label, "count":count_label, "icon":item_icon})
+		var use_button := _button_in(cell, Vector2(94, 39), Vector2(30, 20), "用")
+		use_button.name = "UseItemButton"
+		use_button.tooltip_text = "食用或使用当前物品"
+		use_button.pressed.connect(_use_backpack_slot.bind(index))
+		use_button.visible = false
+		backpack_slots.append({"cell":cell, "item":item_label, "count":count_label, "icon":item_icon, "use":use_button, "key":""})
 	# Keep the action and recipe rows inside the 462px panel in design space.
 	backpack_craft_button = _button_in(backpack_panel, Vector2(30, 360), Vector2(198, 36), "制作背包")
-	backpack_craft_button.tooltip_text = "布料 2 + 纤维 4 + 废料 2"
+	backpack_craft_button.tooltip_text = "布料 2 + 纤维 4 + 金属 1"
 	backpack_craft_button.pressed.connect(craft_backpack)
 	backpack_process_fish_button = _button_in(backpack_panel, Vector2(240, 360), Vector2(165, 36), "处理鱼")
-	backpack_process_fish_button.tooltip_text = "选择鱼类转换为食物"
+	backpack_process_fish_button.tooltip_text = "选择鱼类烤成熟鱼"
 	backpack_process_fish_button.pressed.connect(_open_fish_processing_from_backpack)
-	var hint := _label_in(backpack_panel, Vector2(420, 366), Vector2(168, 24), "上限 999", 6, TEXT_MUTED)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var recipe_ids := ["cooked_food", "bandage", "torch", "trap"]
+	backpack_cook_berries_button = _button_in(backpack_panel, Vector2(414, 360), Vector2(150, 36), "烤浆果")
+	backpack_cook_berries_button.tooltip_text = "把 1 个浆果烤成熟浆果"
+	backpack_cook_berries_button.pressed.connect(_cook_berries)
+	var recipe_ids := ["bandage", "torch", "trap"]
 	for index in range(recipe_ids.size()):
 		var recipe_id: String = recipe_ids[index]
 		var craft_button := _button_in(backpack_panel, Vector2(30 + index * 144, 408), Vector2(132, 30), recipe_id)
@@ -511,7 +680,7 @@ func _build_fish_process_panel() -> void:
 	_label_in(fish_process_panel, Vector2(30, 21), Vector2(435, 33), "处理鱼类", 10, TEXT_ACCENT)
 	fish_process_close_button = _button_in(fish_process_panel, Vector2(489, 18), Vector2(102, 36), "关闭")
 	fish_process_close_button.pressed.connect(close_fish_processing)
-	_label_in(fish_process_panel, Vector2(30, 60), Vector2(552, 27), "选择一种鱼转换为食物", 6, TEXT_MUTED)
+	_label_in(fish_process_panel, Vector2(30, 60), Vector2(552, 27), "选择一种鱼烤成熟鱼，也可以在背包中生吃", 6, TEXT_MUTED)
 	var keys := ResourceManager.FISH_KEYS
 	for index in range(keys.size()):
 		var key: String = keys[index]
@@ -519,7 +688,7 @@ func _build_fish_process_panel() -> void:
 		var icon := _icon(Vector2(30, y + 9), Vector2(16, 16), ICON_FOOD, fish_process_panel)
 		icon.modulate = Color("70a9c4")
 		var label := _label_in(fish_process_panel, Vector2(66, y), Vector2(318, 30), "", 7, TEXT_MAIN)
-		var process := _button_in(fish_process_panel, Vector2(420, y - 3), Vector2(162, 36), "处理")
+		var process := _button_in(fish_process_panel, Vector2(420, y - 3), Vector2(162, 36), "烤熟")
 		process.pressed.connect(_process_fish.bind(key))
 		fish_process_rows[key] = {"label":label, "icon":icon, "process":process}
 	fish_process_panel.visible = false
@@ -533,16 +702,19 @@ func _build_storage_panel() -> void:
 	storage_capacity_label = _label_in(storage_panel, Vector2(30, 60), Vector2(570, 27), "", 6, TEXT_MUTED)
 	storage_close_button = _button_in(storage_panel, Vector2(678, 18), Vector2(102, 36), "关闭")
 	storage_close_button.pressed.connect(close_storage)
-	var keys := ["food", "wood", "medicine", "fuel", "scrap", "stone", "fiber", "cloth", "metal", "water", "cooked_food", "bandage", "torch", "trap"]
+	var keys := ResourceManager.ITEM_KEYS
 	for index in range(keys.size()):
 		var key: String = keys[index]
-		var y := 96 + index * 27
-		var icon := _icon(Vector2(30, y + 4), Vector2(16, 16), _item_icon_texture(key), storage_panel)
+		var column := index % 2
+		var row_index := index / 2
+		var base_x := 30 + column * 384
+		var y := 96 + row_index * 29
+		var icon := _icon(Vector2(base_x, y + 4), Vector2(16, 16), _item_icon_texture(key), storage_panel)
 		icon.modulate = _item_icon_tint(key)
-		var label := _label_in(storage_panel, Vector2(66, y), Vector2(306, 24), "", 6, TEXT_MAIN)
-		var take := _button_in(storage_panel, Vector2(390, y - 3), Vector2(81, 27), "取")
-		var put := _button_in(storage_panel, Vector2(486, y - 3), Vector2(81, 27), "放")
-		var discard := _button_in(storage_panel, Vector2(582, y - 3), Vector2(81, 27), "丢")
+		var label := _label_in(storage_panel, Vector2(base_x + 36, y), Vector2(138, 24), "", 5, TEXT_MAIN)
+		var take := _button_in(storage_panel, Vector2(base_x + 180, y - 3), Vector2(54, 27), "取")
+		var put := _button_in(storage_panel, Vector2(base_x + 240, y - 3), Vector2(54, 27), "放")
+		var discard := _button_in(storage_panel, Vector2(base_x + 300, y - 3), Vector2(54, 27), "丢")
 		take.tooltip_text = "从储物架取 1 个到背包"
 		put.tooltip_text = "将背包中的 1 个放回储物架"
 		discard.tooltip_text = "从储物架丢弃 1 个"
@@ -573,7 +745,7 @@ func _build_shortcut_panel() -> void:
 	var rows := [
 		["移动", "WASD / 方向键"],
 		["互动", "E"],
-		["建造", "B"],
+		["建造选择", "B"],
 		["暂停", "Esc / Space"],
 		["背包", "K"],
 		["保存 / 读取", "F5 / F9"],
@@ -591,6 +763,8 @@ func _build_shortcut_panel() -> void:
 	shortcut_panel.visible = false
 
 func _toggle_shortcut_panel() -> void:
+	if _build_selection_open:
+		_close_build_selection()
 	_shortcut_open = not _shortcut_open
 	if _shortcut_open:
 		_backpack_open = false
@@ -614,6 +788,8 @@ func _build_log_panel() -> void:
 	log_panel.visible = false
 
 func toggle_log_panel() -> void:
+	if _build_selection_open:
+		_close_build_selection()
 	_log_open = not _log_open
 	if _log_open:
 		_backpack_open = false
@@ -634,7 +810,7 @@ func refresh() -> void:
 	var current_time := Time.get_ticks_msec() / 1000.0
 
 	if resources != null:
-		var badge_keys := ["food", "wood", "medicine", "fuel", "stone", "scrap", "fiber", "cloth", "metal"]
+		var badge_keys := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal"]
 		for index in range(mini(_resource_badges.size(), badge_keys.size())):
 			var badge: Label = _resource_badges[index]
 			var key := str(badge_keys[index])
@@ -642,13 +818,17 @@ func refresh() -> void:
 			# The capacity stays in the tooltip; a single compact quantity keeps
 			# every 16px icon slot readable at the native HUD scale.
 			badge.text = str(amount)
-			badge.tooltip_text = "%s：%d / %d" % [key, _resource_amount(resources, key), _resource_capacity(resources, key)]
+			badge.tooltip_text = "%s：%d / %d" % [resources.display_name(key), _resource_amount(resources, key), _resource_capacity(resources, key)]
 	if day_label != null:
 		day_label.text = "第%d天" % int(game.day)
 	if clock_label != null:
 		clock_label.text = _clock_text()
 	if weather_label != null:
 		weather_label.text = _weather_text(str(game.weather))
+	if temperature_label != null:
+		var temperature_status: Dictionary = game.get_temperature_status() if game.has_method("get_temperature_status") else {}
+		temperature_label.text = "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))]
+		temperature_label.tooltip_text = "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0))
 	if threat_label != null:
 		threat_label.text = _threat_text()
 	if threat_progress_bar != null:
@@ -699,7 +879,7 @@ func refresh() -> void:
 func _update_buttons() -> void:
 	var inside := bool(game.in_house) if game != null else false
 	var paused := _is_paused()
-	var overlay_open := _backpack_open or _storage_open or _fish_process_open or _shortcut_open or _log_open
+	var overlay_open := _backpack_open or _storage_open or _fish_process_open or _shortcut_open or _log_open or _build_selection_open
 	if backpack_button != null:
 		backpack_button.visible = not overlay_open
 	if backpack_panel != null:
@@ -729,22 +909,11 @@ func _update_buttons() -> void:
 		pause_button.text = "▶" if paused else "Ⅱ"
 		pause_button.disabled = str(game.phase) == "ended"
 		pause_button.visible = not overlay_open
-	if axe_action_button != null:
-		var has_axe := _has_axe(game.resources if game != null else null)
-		axe_action_button.disabled = has_axe or not _can_craft_axe()
-		axe_action_button.text = ""
-		axe_action_button.tooltip_text = "斧头已制作" if has_axe else "制作石斧：石料 2 + 木材 3"
-		if axe_icon != null:
-			axe_icon.modulate = Color.WHITE if has_axe else Color("687a76")
-	if pickaxe_action_button != null:
-		var has_pickaxe := _has_pickaxe(game.resources if game != null else null)
-		pickaxe_action_button.disabled = has_pickaxe or not _can_craft_pickaxe()
-		pickaxe_action_button.text = ""
-		pickaxe_action_button.tooltip_text = "石镐已制作" if has_pickaxe else "制作石镐：石料 3 + 木材 2"
-		if pickaxe_icon != null:
-			pickaxe_icon.modulate = Color.WHITE if has_pickaxe else Color("687a76")
-	if tool_bar != null:
-		tool_bar.visible = not overlay_open
+	if build_selection_panel != null:
+		build_selection_panel.visible = _build_selection_open
+	if build_selection_dim != null:
+		build_selection_dim.visible = _build_selection_open
+	_refresh_build_selection()
 	if shortcut_button != null:
 		shortcut_button.visible = not overlay_open
 	if shortcut_panel != null:
@@ -763,10 +932,12 @@ func _update_buttons() -> void:
 	if interact_button != null:
 		var nearby := world != null and world.nearest != null and not inside
 		var can_interact := nearby and not paused
-		interact_button.visible = nearby
+		interact_button.visible = nearby and not overlay_open
 		interact_button.disabled = not can_interact
 
 func toggle_backpack() -> void:
+	if _build_selection_open:
+		_close_build_selection()
 	if _backpack_open:
 		close_backpack()
 		return
@@ -786,6 +957,9 @@ func close_storage() -> void:
 	refresh()
 
 func close_overlay() -> bool:
+	if _build_selection_open:
+		_close_build_selection()
+		return true
 	if _log_open:
 		close_log_panel()
 		return true
@@ -804,11 +978,15 @@ func close_overlay() -> bool:
 	return false
 
 func _on_storage_open_requested() -> void:
+	if _build_selection_open:
+		_close_build_selection()
 	_backpack_open = false
 	_storage_open = true
 	refresh()
 
 func _on_fish_processing_requested(_fish_key: String) -> void:
+	if _build_selection_open:
+		_close_build_selection()
 	# A catch is already in the backpack. Open that view first so the player
 	# can inspect the fish slot and choose whether to process it.
 	_backpack_open = true
@@ -849,6 +1027,8 @@ func _refresh_backpack_panel() -> void:
 		var unlocked := index < capacity
 		var key := keys[index] if index < keys.size() else ""
 		var amount := int(resources.backpack.get(key, 0)) if unlocked and not key.is_empty() else 0
+		slot["key"] = key
+		backpack_slots[index] = slot
 		if item_label != null:
 			item_label.text = resources.display_name(key) if amount > 0 else ("空" if unlocked else "锁定")
 			item_label.add_theme_color_override("font_color", TEXT_MAIN if unlocked else TEXT_MUTED)
@@ -858,6 +1038,10 @@ func _refresh_backpack_panel() -> void:
 			item_icon.texture = _item_icon_texture(key) if amount > 0 else ICON_CHEST
 			item_icon.modulate = _item_icon_tint(key)
 			item_icon.visible = amount > 0
+		var use_button: Button = slot.get("use")
+		if use_button != null:
+			use_button.visible = amount > 0 and _is_usable_item(key)
+			use_button.disabled = not use_button.visible
 		if cell != null:
 			var style := _button_style(Color("203638", 0.96) if unlocked else Color("101b1d", 0.96), UI_PANEL_TEXTURE)
 			cell.add_theme_stylebox_override("panel", style)
@@ -873,6 +1057,10 @@ func _refresh_backpack_panel() -> void:
 				break
 		backpack_process_fish_button.visible = has_fish
 		backpack_process_fish_button.disabled = not has_fish
+	if backpack_cook_berries_button != null:
+		var has_berries := int(resources.backpack.get("food", 0)) > 0
+		backpack_cook_berries_button.visible = true
+		backpack_cook_berries_button.disabled = not has_berries
 
 func _refresh_fish_process_panel() -> void:
 	if fish_process_panel == null or game == null or game.resources == null: return
@@ -880,17 +1068,16 @@ func _refresh_fish_process_panel() -> void:
 	for key in fish_process_rows:
 		var row: Dictionary = fish_process_rows[key]
 		var amount := int(resources.backpack.get(str(key), 0))
-		var food := int(resources.fish_food_value(str(key))) if resources.has_method("fish_food_value") else 0
 		var label: Label = row.get("label")
 		var process: Button = row.get("process")
-		if label != null: label.text = "%s  ×%d  → 食物 +%d" % [resources.display_name(str(key)), amount, food]
+		if label != null: label.text = "%s  ×%d  → %s" % [resources.display_name(str(key)), amount, resources.cooked_fish_name(str(key))]
 		if process != null:
 			process.disabled = amount <= 0
-			process.text = "处理" if amount <= 0 else "处理 1 条"
+			process.text = "烤熟" if amount <= 0 else "烤熟 1 条"
 
 func _process_fish(key: String) -> void:
 	if game == null or game.resources == null: return
-	var result: Dictionary = game.resources.convert_fish_to_food(key)
+	var result: Dictionary = game.resources.cook_fish(key)
 	_show_message(str(result.get("reason", "")), 2.0)
 	refresh()
 
@@ -952,7 +1139,9 @@ func _update_target(hero: Survivor) -> void:
 	var text := goal_text
 	if text.is_empty():
 		text = "探索荒野，带回物资"
-	if world != null and world.build_mode != null and world.build_mode.active:
+	if _build_selection_open:
+		text = "选择工具或设施"
+	elif world != null and world.build_mode != null and world.build_mode.active:
 		text = "放置设施 · E 确认"
 	elif world != null and world.nearest != null:
 		var point = world.nearest
@@ -1019,18 +1208,6 @@ func _update_survivor_card(hero: Survivor) -> void:
 		if value_label != null:
 			value_label.text = str(value)
 
-func _rail_button(index: int, label_text: String, hint: String, callback: Callable) -> Button:
-	var rail_texture: Texture2D = RAIL_ICON_TEXTURES[index] if index < RAIL_ICON_TEXTURES.size() else null
-	var button := _button(Vector2(RIGHT_RAIL_X, 57 + index * 35), Vector2(32, 30), label_text, hud)
-	button.name = "ActionRailButton%d" % index
-	button.tooltip_text = hint
-	button.add_theme_font_size_override("font_size", PixelTheme.FONT_SIZE_SMALL)
-	button.pressed.connect(callback)
-	if rail_texture != null:
-		var icon := _add_button_icon(button, rail_texture)
-		_rail_icons.append(icon)
-	return button
-
 func _update_build_prompt() -> void:
 	if prompt_label == null or world == null or world.build_mode == null:
 		return
@@ -1051,7 +1228,7 @@ func _on_interaction_hint(prompt: String) -> void:
 		prompt_label.text = prompt
 	_set_prompt_visible(prompt != "")
 	if prompt.contains("睡觉"):
-		_show_message("准备休息：夜间会消耗食物和燃料。", 4.0)
+		_show_message("准备休息：夜间会消耗食物，注意保持身体温度。", 4.0)
 	if prompt == "":
 		_on_interaction_progress("", 0.0)
 	_update_target(game.get_protagonist() if game != null else null)
@@ -1075,6 +1252,8 @@ func _on_interaction_progress(name: String, progress: float) -> void:
 func toggle_pause_menu() -> void:
 	if game == null or game.time == null:
 		return
+	if _build_selection_open:
+		_close_build_selection()
 	paused_by_menu = not paused_by_menu
 	game.time.paused = paused_by_menu
 	if game.audio != null and game.audio.has_method("set_pause_ducked"):
@@ -1138,16 +1317,50 @@ func toggle_build_mode() -> void:
 	if game == null or bool(game.in_house):
 		_show_message("请先离开小屋", 3.0)
 		return
-	world.build_mode.toggle()
+	if str(game.phase) != GameManager.PHASE_MORNING and not world.build_mode.active:
+		_show_message("只能在清晨规划建造", 3.0)
+		return
+	if _build_selection_open:
+		_close_build_selection()
+		return
 	if world.build_mode.active:
-		_update_build_prompt()
-	else:
+		world.build_mode.toggle()
 		_last_prompt = ""
 		_set_prompt_visible(false)
 		message_until = 0.0
 		if message_label != null:
 			message_label.text = ""
+	else:
+		_open_build_selection()
+	if world.build_mode.active:
+		_update_build_prompt()
 	refresh()
+
+func _cook_berries() -> void:
+	if game == null or game.resources == null: return
+	var result: Dictionary = game.resources.cook_berries()
+	_show_message(str(result.get("reason", "")), 2.0)
+	refresh()
+
+func _use_backpack_slot(index: int) -> void:
+	if game == null or index < 0 or index >= backpack_slots.size(): return
+	var key := str(backpack_slots[index].get("key", ""))
+	if key.is_empty(): return
+	var result: Dictionary = game.use_item(key)
+	_show_message(str(result.get("reason", "")), 2.5)
+	refresh()
+
+func _is_usable_item(key: String) -> bool:
+	return key in ["food", "medicine", "cooked_food", "bandage", "torch", "trap"] or ResourceManager.FISH_KEYS.has(key) or ResourceManager.COOKED_FISH_KEYS.has(key)
+
+func _on_tool_selection_requested() -> void:
+	if _backpack_open:
+		_backpack_open = false
+	_storage_open = false
+	_fish_process_open = false
+	_shortcut_open = false
+	_log_open = false
+	_open_build_selection()
 
 func cycle_policy() -> void:
 	if game == null or not game.has_method("set_camp_policy"):
@@ -1203,7 +1416,7 @@ func _set_prompt_visible(visible: bool) -> void:
 	if panel != null:
 		panel.visible = visible
 	if interact_button != null:
-		interact_button.visible = visible or (world != null and world.nearest != null)
+		interact_button.visible = not _build_selection_open and (visible or (world != null and world.nearest != null))
 
 func _is_paused() -> bool:
 	return game != null and game.time != null and bool(game.time.paused)

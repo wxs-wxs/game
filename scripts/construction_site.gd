@@ -8,6 +8,7 @@ var blueprint_id := ""
 var build_time := 1.0
 var progress := 0.0
 var completed := false
+var workbench_art: WorkbenchArt
 signal construction_completed(site: ConstructionSite)
 
 func setup(manager: GameManager, id: String, duration: float) -> void:
@@ -21,35 +22,48 @@ func setup(manager: GameManager, id: String, duration: float) -> void:
 		art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		art.z_index = 1
 		add_child(art)
+	elif blueprint_id == "workbench":
+		workbench_art = preload("res://scripts/workbench_art.gd").new()
+		workbench_art.name = "WorkbenchArt"
+		add_child(workbench_art)
+		workbench_art.setup(false)
 	queue_redraw()
 
 func _process(delta: float) -> void:
 	if completed or game == null or game.time.paused: return
-	var canonical_progress := false
-	if game.buildings != null and game.buildings.world_projects.has(blueprint_id):
-		canonical_progress = true
-		game.buildings.advance_world_project(blueprint_id, delta)
-		var project: Dictionary = game.buildings.world_projects.get(blueprint_id, {})
-		progress = build_time if project.is_empty() and game.buildings.has(blueprint_id) else float(project.get("progress", progress))
-	if not canonical_progress:
-		progress = minf(build_time, progress + delta)
-	if progress >= build_time or (canonical_progress and game.buildings.has(blueprint_id)):
-		completed = true
-		if game.construction_skill != null:
-			game.construction_skill.completed_count += 1
-			game.grant_construction_xp(10)
-		var first_completion := not game.buildings.has(blueprint_id)
-		game.complete_world_construction(blueprint_id)
-		if first_completion and blueprint_id == "storage_shelf": _register_outdoor_shelf()
-		if game.audio != null: game.audio.play_sfx("build_complete")
-		construction_completed.emit(self)
+	if game.buildings != null and not game.buildings.active_project.is_empty() and str(game.buildings.active_project.get("id", "")) == blueprint_id:
+		game.buildings.advance_active_project(delta)
+		var project: Dictionary = game.buildings.active_project
+		if project.is_empty() and game.buildings.has(blueprint_id): progress = build_time
+		else: progress = float(project.get("progress", progress))
+	if progress >= build_time or (game.buildings != null and game.buildings.has(blueprint_id) and game.buildings.active_project.is_empty()):
+		_complete_once()
 	queue_redraw()
+
+func _complete_once() -> void:
+	if completed or game == null: return
+	completed = true
+	if game.construction_skill != null:
+		game.construction_skill.completed_count += 1
+		game.grant_construction_xp(10)
+	game.complete_world_construction(blueprint_id)
+	if blueprint_id == "storage_shelf": _register_outdoor_shelf()
+	if blueprint_id == "workbench": _register_outdoor_workbench()
+	if game.audio != null: game.audio.play_sfx("build_complete")
+	visible = false
+	construction_completed.emit(self)
+	queue_free()
 
 func _draw() -> void:
 	if blueprint_id == "storage_shelf":
 		var art := get_node_or_null("NinjaAdventureConstructionArt") as Sprite2D
 		if art != null:
 			art.modulate.a = 1.0 if completed else 0.62
+		return
+	if blueprint_id == "workbench":
+		if workbench_art != null: workbench_art.set_completed(completed)
+		if not completed:
+			draw_rect(Rect2(-20, -20, 40, 40), Color("b8a16b", 0.18), false, 1.0)
 		return
 	var tint := Color("dca85e") if not completed else Color("84a98c")
 	draw_rect(Rect2(-8, -8, 16, 16), Color(tint, 0.35), true)
@@ -65,3 +79,9 @@ func _register_outdoor_shelf() -> void:
 	var shelf = preload("res://scripts/storage_shelf_point.gd").new()
 	shelf.unique_id = "storage_shelf_outdoor"
 	world._add_point(shelf, position)
+
+func _register_outdoor_workbench() -> void:
+	var world = game.exploration_world if game != null else null
+	if world == null or not world.has_method("register_outdoor_workbench"):
+		return
+	world.register_outdoor_workbench(position)
