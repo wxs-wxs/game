@@ -30,14 +30,14 @@ func resolve_tick(survivors: Array, resources: ResourceManager, buildings: Build
 				var food_gain := 1 + int(ceil(float(survivor.skill_value("gather")) * 0.65))
 				food_gain += rng.randi_range(0, 1)
 				food_gain = maxi(1, int(round(float(food_gain) * weather_strategy.gather_multiplier(weather))))
-				var food_result := resources.collect_rewards_atomic({"food": food_gain})
+				var food_result := resources.collect_rewards_atomic({"food": food_gain}, "camp_task")
 				if bool(food_result.get("ok", false)):
 					survivor.add_xp("gather", 1)
 					lines.append("%s 找回 %d 食物" % [survivor.display_name, food_gain])
 			"wood":
 				var wood_gain: int = 1 + survivor.skill_value("gather")
 				wood_gain = maxi(1, int(round(float(wood_gain) * weather_strategy.gather_multiplier(weather))))
-				var wood_result := resources.collect_rewards_atomic({"wood": wood_gain})
+				var wood_result := resources.collect_rewards_atomic({"wood": wood_gain}, "camp_task")
 				if bool(wood_result.get("ok", false)):
 					survivor.add_xp("gather", 1)
 					lines.append("%s 收集 %d 木材" % [survivor.display_name, wood_gain])

@@ -189,6 +189,25 @@ func can_collect_rewards(rewards: Dictionary) -> bool:
 func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dictionary:
 	if rewards.is_empty():
 		return {"ok":true, "reason":"没有奖励。", "added":{}}
+	if source_id == "camp_task":
+		for key in rewards:
+			var storage_id := str(key)
+			var storage_amount := int(rewards[key])
+			if storage_amount <= 0:
+				continue
+			if not amounts.has(storage_id) or int(amounts.get(storage_id, 0)) + storage_amount > int(capacities.get(storage_id, STACK_MAX)):
+				return {"ok":false, "reason":"营地储备空间不足。", "added":{}}
+		var stored: Dictionary = {}
+		for key in rewards:
+			var storage_id := str(key)
+			var storage_amount := int(rewards[key])
+			if storage_amount <= 0:
+				continue
+			var actual := add(storage_id, storage_amount)
+			if actual != storage_amount:
+				return {"ok":false, "reason":"营地奖励存储失败。", "added":{}}
+			stored[storage_id] = storage_amount
+		return {"ok":true, "reason":"奖励已存入营地。", "added":stored}
 	if not can_collect_rewards(rewards):
 		return {"ok":false, "reason":"携带空间不足，请先整理背包。", "added":{}}
 	for key in rewards:
