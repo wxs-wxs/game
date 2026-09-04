@@ -785,6 +785,8 @@ func _build_shortcut_panel() -> void:
 	shortcut_panel.visible = false
 
 func _toggle_shortcut_panel() -> void:
+	if _event_open or _report_open:
+		return
 	if _build_selection_open:
 		_close_build_selection()
 	if _shortcut_open:
@@ -925,6 +927,8 @@ func show_report(lines: Array[String], terminal: bool = false) -> void:
 	event_panel.visible = false
 
 func toggle_log_panel() -> void:
+	if _event_open or _report_open:
+		return
 	if _build_selection_open:
 		_close_build_selection()
 	if _log_open:
@@ -1116,6 +1120,8 @@ func _refresh_phase_overlay() -> void:
 				_close_pause_overlay("report")
 
 func toggle_backpack() -> void:
+	if _event_open or _report_open:
+		return
 	if _build_selection_open:
 		_close_build_selection()
 	if _backpack_open:
@@ -1137,6 +1143,8 @@ func close_storage() -> void:
 	refresh()
 
 func close_overlay() -> bool:
+	if _event_open or _report_open:
+		return true
 	if _build_selection_open:
 		_close_build_selection()
 		return true
@@ -1434,7 +1442,7 @@ func _on_interaction_progress(name: String, progress: float) -> void:
 		interaction_detail_label.text = "动作进行中" if clamped > 0.0 and clamped < 1.0 else ""
 
 func toggle_pause_menu() -> void:
-	if game == null or game.time == null:
+	if game == null or game.time == null or _event_open or _report_open:
 		return
 	if _build_selection_open:
 		_close_build_selection()
@@ -1495,6 +1503,8 @@ func upgrade_house() -> void:
 	refresh()
 
 func toggle_build_mode() -> void:
+	if _event_open or _report_open:
+		return
 	if world == null or world.build_mode == null:
 		_show_message("建造系统未就绪", 3.0)
 		return
