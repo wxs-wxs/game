@@ -69,6 +69,7 @@ var outdoor_position := Vector2(180, 155)
 var interior_manager
 var build_mode
 var last_weather := ""
+var last_nearest_prompt := ""
 var visual_clock := 0.0
 var fish_school: Node2D
 var grass_tile: Texture2D
@@ -176,7 +177,10 @@ func _process(delta: float) -> void:
 			best = distance
 	if candidate != nearest:
 		nearest = candidate
-		interaction_changed.emit(nearest.prompt_text() if nearest != null else "")
+	var next_prompt := nearest.prompt_text() if nearest != null else ""
+	if next_prompt != last_nearest_prompt:
+		last_nearest_prompt = next_prompt
+		interaction_changed.emit(next_prompt)
 
 func try_interact() -> void:
 	if build_mode != null and build_mode.active: return
@@ -395,8 +399,6 @@ func restore_state(data: Dictionary) -> void:
 			point.regrow_remaining = float(row.get("regrow", 0.0))
 			point.refresh_tree_art()
 		if point is FireplacePoint:
-			point.lit = bool(row.get("lit", game.house_fire_lit))
-			if point.lit: game.house_fire_lit = true
 			point._refresh_fire_visual()
 		if point is BedPoint and point.unique_id == "house_bed":
 			point.rested_this_day = bool(row.get("rested", false))
@@ -430,7 +432,7 @@ func _refresh_audio_context() -> void:
 	else:
 		var near_fire := false
 		for point in interactions:
-			if is_instance_valid(point) and point.unique_id == "campfire" and player.global_position.distance_to(point.global_position) < 90.0: near_fire = true
+			if is_instance_valid(point) and point.unique_id == "campfire" and game.is_fire_active("campfire") and player.global_position.distance_to(point.global_position) < 90.0: near_fire = true
 		var context := "rain_campfire" if game.weather == "暴雨" and near_fire else ("campfire" if near_fire else ("rain" if game.weather == "暴雨" else "outdoor"))
 		game.audio.play_ambience(context)
 
@@ -832,7 +834,7 @@ func _draw_atmosphere() -> void:
 	# The campfire is the map's visual anchor. Concentric, low-alpha washes give
 	# it a small warm pool without requiring a blurry light texture or flattening
 	# the whole scene with CanvasModulate.
-	var fire_glow := 0.020 + night * 0.045
+	var fire_glow := (0.020 + night * 0.045) if game.is_fire_active("campfire") else 0.0
 	draw_circle(Vector2(210, 154), 96.0, Color("e9a55b", fire_glow))
 	draw_circle(Vector2(210, 154), 42.0, Color("f1b96b", fire_glow * 1.55))
 	match game.weather:

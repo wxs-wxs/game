@@ -32,7 +32,20 @@ var exploration_world
 var in_house := false
 var house_id := "starter_hut"
 var house_level := 0
-var house_fire_lit := false
+var fire_states: Dictionary = {}
+var house_fire_lit: bool:
+	get:
+		return is_fire_active("house_fireplace")
+	set(value):
+		var state: Dictionary = fire_states.get("house_fireplace", {})
+		if state.is_empty():
+			state = _default_fire_states().get("house_fireplace", {}).duplicate(true)
+		if value:
+			state["lit"] = is_fire_active("house_fireplace")
+		else:
+			state["lit"] = false
+			state["fuel_remaining"] = 0.0
+		fire_states["house_fireplace"] = state
 var outdoor_position := Vector2(180, 155)
 var built_facilities: Array[String] = []
 var rng := RandomNumberGenerator.new()
@@ -73,6 +86,7 @@ func new_game(seed_value: int = 14072026) -> void:
 	crafting = CraftingSystemClass.new(); crafting.setup(self)
 	survival = SurvivalDirectorClass.new()
 	survival.reset(random_seed)
+	fire_states = _default_fire_states()
 	blueprints.unlock("storage_shelf")
 	blueprints.unlock("workbench")
 	resources.set_workbench_available(false)
@@ -321,18 +335,70 @@ func toggle_pause() -> void:
 func get_protagonist() -> Survivor:
 	return survivors[0] if not survivors.is_empty() else null
 
+func _fire_config() -> Dictionary:
+	if survival != null and survival.definitions.get("fire", {}) is Dictionary:
+		return survival.definitions.get("fire", {})
+	return {}
+
+func _default_fire_states() -> Dictionary:
+	var config := _fire_config()
+	var capacity := maxf(0.1, float(config.get("fuel_capacity", 360.0)))
+	var per_wood := maxf(0.1, float(config.get("fuel_per_wood", 120.0)))
+	return {
+		"campfire": {"lit": false, "fuel_remaining": 0.0, "fuel_capacity": capacity, "fuel_per_wood": per_wood},
+		"house_fireplace": {"lit": false, "fuel_remaining": 0.0, "fuel_capacity": capacity, "fuel_per_wood": per_wood}
+	}
+
+func fire_state(source_id: String) -> Dictionary:
+	var state: Dictionary = fire_states.get(source_id, {})
+	return state.duplicate(true)
+
+func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
+	if wood <= 0 or not fire_states.has(source_id):
+		return {"ok": false, "reason": "无法添加燃料。"}
+	var state: Dictionary = fire_states[source_id]
+	if not resources.can_afford({"wood": wood}):
+		return {"ok": false, "reason": resources.missing_cost_text({"wood": wood})}
+	var per_wood := maxf(0.1, float(state.get("fuel_per_wood", 120.0)))
+	var available := maxf(0.0, float(state.get("fuel_capacity", 360.0)) - float(state.get("fuel_remaining", 0.0)))
+	var accepted_wood := mini(wood, int(ceil(available / per_wood)))
+	var added := minf(float(accepted_wood) * per_wood, available)
+	if accepted_wood <= 0 or added <= 0.0:
+		return {"ok": false, "reason": "燃料已经满了。"}
+	resources.spend({"wood": accepted_wood})
+	state["fuel_remaining"] = float(state.get("fuel_remaining", 0.0)) + added
+	state["lit"] = true
+	fire_states[source_id] = state
+	return {"ok": true, "reason": "火焰重新燃旺。", "state": state.duplicate(true)}
+
+func tick_fire(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	for source_id in fire_states.keys():
+		var state: Dictionary = fire_states[source_id]
+		var remaining := maxf(0.0, float(state.get("fuel_remaining", 0.0)) - delta)
+		state["fuel_remaining"] = remaining
+		if remaining <= 0.0:
+			state["lit"] = false
+		fire_states[source_id] = state
+
+func is_fire_active(source_id: String) -> bool:
+	var state: Dictionary = fire_states.get(source_id, {})
+	return bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
+
 func get_environment_temperature() -> float:
 	var base := float(WEATHER_TEMPERATURES.get(weather, 12.0))
 	var daylight := sin(clampf(time.progress(), 0.0, 1.0) * PI) * 7.0
 	var temperature := base + daylight
+	var fire_config := _fire_config()
 	if in_house: temperature += 10.0
-	if in_house and house_fire_lit: temperature += 7.0
+	if in_house and is_fire_active("house_fireplace"): temperature += float(fire_config.get("house_fireplace_warmth", 7.0))
 	if buildings != null and buildings.has("fire_basin"): temperature += 4.0
 	if not in_house:
 		var position := outdoor_position
 		if exploration_world != null and exploration_world.player != null:
 			position = exploration_world.player.global_position
-		if position.distance_to(Vector2(210, 153)) <= 110.0: temperature += 6.0
+		if is_fire_active("campfire") and position.distance_to(Vector2(210, 153)) <= 110.0: temperature += float(fire_config.get("campfire_warmth", 6.0))
 	environment_temperature = snappedf(temperature, 0.1)
 	return environment_temperature
 
@@ -342,6 +408,7 @@ func get_temperature_status() -> Dictionary:
 
 func _update_temperature(simulation_seconds: float) -> void:
 	if simulation_seconds <= 0.0: return
+	tick_fire(simulation_seconds)
 	var hero := get_protagonist()
 	if hero == null or not hero.alive: return
 	var environment := get_environment_temperature()
@@ -530,7 +597,7 @@ func to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
-	return {"version":7,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+	return {"version":8,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
 
 func from_dict(data: Dictionary) -> void:
 	random_seed = int(data.get("random_seed", 14072026)); rng.seed = random_seed; rng.state = int(data.get("rng_state", rng.state))
@@ -545,6 +612,19 @@ func from_dict(data: Dictionary) -> void:
 	var survival_data: Dictionary = data.get("survival", {})
 	if survival_data.is_empty(): survival.reset(random_seed)
 	else: survival.from_dict(survival_data)
+	var migrate_legacy_house_fire: bool = not data.has("fire_states") and bool(data.get("house_fire_lit", false))
+	fire_states = _default_fire_states()
+	var saved_fire_states: Variant = data.get("fire_states", {})
+	if saved_fire_states is Dictionary:
+		for source_id in fire_states.keys():
+			var saved_state: Variant = saved_fire_states.get(source_id, {})
+			if saved_state is Dictionary:
+				var merged_state: Dictionary = fire_states[source_id].duplicate(true)
+				for key in saved_state:
+					merged_state[key] = saved_state[key]
+				merged_state["fuel_remaining"] = clampf(float(merged_state.get("fuel_remaining", 0.0)), 0.0, float(merged_state.get("fuel_capacity", 360.0)))
+				merged_state["lit"] = bool(merged_state.get("lit", false)) and float(merged_state.get("fuel_remaining", 0.0)) > 0.0
+				fire_states[source_id] = merged_state
 	if not data.has("blueprints"):
 		blueprints.unlock("storage_shelf"); blueprints.unlock("workbench")
 	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true)); day_return_required = bool(data.get("day_return_required", false)); night_settlement_applied = bool(data.get("night_settlement_applied", false)); night_context = {}
@@ -552,12 +632,19 @@ func from_dict(data: Dictionary) -> void:
 	for row in data.get("survivors", []): survivors.append(Survivor.from_dict(row))
 	daily_log = []
 	for line in data.get("daily_log", []): daily_log.append(str(line))
+	if migrate_legacy_house_fire:
+		daily_log.append("旧存档兼容：炉火获得一次初始燃料。")
 	report_lines = []
 	for line in data.get("report_lines", []): report_lines.append(str(line))
 	key_choices = []
 	for line in data.get("key_choices", []): key_choices.append(str(line))
 	no_food_days = int(data.get("no_food_days", 0)); safety = int(data.get("safety", 50)); won = bool(data.get("won", false)); end_reason = str(data.get("end_reason", ""))
-	house_id = str(data.get("house_id", "starter_hut")); house_level = int(data.get("house_level", 0)); house_fire_lit = bool(data.get("house_fire_lit", false)); built_facilities = []
+	house_id = str(data.get("house_id", "starter_hut")); house_level = int(data.get("house_level", 0)); built_facilities = []
+	if migrate_legacy_house_fire:
+		var legacy_fire: Dictionary = fire_states["house_fireplace"]
+		legacy_fire["fuel_remaining"] = minf(float(legacy_fire.get("fuel_capacity", 360.0)), float(legacy_fire.get("fuel_per_wood", 120.0)))
+		legacy_fire["lit"] = true
+		fire_states["house_fireplace"] = legacy_fire
 	for item in data.get("built_facilities", []):
 		var legacy_id := str(item)
 		if buildings.definitions.has(legacy_id):

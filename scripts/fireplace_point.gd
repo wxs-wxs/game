@@ -15,7 +15,7 @@ func _init() -> void:
 	interaction_range = 28.0
 	interaction_time = 1.2
 	cooldown_time = 0.0
-	required_resources = {"wood": 1}
+	required_resources = {}
 	reward = {}
 	action_id = "tend_fire"
 	indoor_only = true
@@ -24,34 +24,38 @@ var indoor_only := true
 
 func setup(manager: GameManager) -> void:
 	super.setup(manager)
-	if game != null and bool(game.house_fire_lit):
-		lit = true
 	_refresh_fire_visual()
 
 func can_interact() -> bool:
-	return not lit and super.can_interact()
-
-func interact() -> Dictionary:
-	if lit:
-		return {"ok":false, "reason":"炉火已经点燃，烟囱正在冒烟。", "failed":true}
-	return super.interact()
+	if game == null or not super.can_interact():
+		return false
+	var state := game.fire_state("house_fireplace")
+	return float(state.get("fuel_remaining", 0.0)) < float(state.get("fuel_capacity", 0.0))
 
 func perform_interaction() -> Dictionary:
-	lit = true
-	if game != null:
-		game.house_fire_lit = true
-		game.daily_log.append("屋内炉火已经点燃，烟囱开始冒烟。")
+	var result: Dictionary = game.add_fire_fuel("house_fireplace")
+	if not bool(result.get("ok", false)):
+		return {"ok": false, "message": str(result.get("reason", "无法添柴。")), "failed": true}
+	game.daily_log.append("屋内炉火已经点燃，烟囱开始冒烟。")
 	_refresh_fire_visual()
-	return {"ok":true, "message":"炉火点燃了，烟囱开始冒烟。"}
+	return {"ok": true, "message": "炉火点燃了，烟囱开始冒烟。"}
 
 func prompt_text() -> String:
-	if lit:
-		return "炉火已燃（烟囱冒烟）"
-	if game != null and not game.resources.can_afford(required_resources):
+	if game == null:
+		return "炉火"
+	var state := game.fire_state("house_fireplace")
+	var remaining := float(state.get("fuel_remaining", 0.0))
+	var capacity := float(state.get("fuel_capacity", 0.0))
+	if remaining >= capacity:
+		return "炉火燃料已满"
+	if not game.resources.can_afford({"wood": 1}):
 		return "炉火（需要木材）"
+	if game.is_fire_active("house_fireplace"):
+		return "[E] 添加木材（炉火燃烧中，烟囱冒烟）"
 	return "[E] 添加木材并点燃炉火"
 
 func _refresh_fire_visual() -> void:
+	lit = game != null and game.is_fire_active("house_fireplace")
 	if lit:
 		if fire_sprite == null:
 			fire_sprite = Sprite2D.new()
@@ -69,6 +73,7 @@ func _refresh_fire_visual() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	_refresh_fire_visual()
 	if fire_sprite != null and lit:
 		fire_sprite.position = Vector2(0, -7.0 + sin(Time.get_ticks_msec() * 0.012) * 0.8)
 

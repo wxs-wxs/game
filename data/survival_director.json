@@ -135,6 +135,12 @@
       "reward": {"morale": 3}
     }
   ],
+  "fire": {
+    "fuel_capacity": 360.0,
+    "fuel_per_wood": 120.0,
+    "campfire_warmth": 6.0,
+    "house_fireplace_warmth": 7.0
+  },
   "weather": {
     "晴朗": {"threat_delta": -1, "gather_multiplier": 1.05, "fuel_extra": 0},
     "多云": {"threat_delta": 0, "gather_multiplier": 1.0, "fuel_extra": 0},
