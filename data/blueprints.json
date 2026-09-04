@@ -1,0 +1,6 @@
+{
+  "storage_shelf": {"id":"storage_shelf", "name":"储物架", "cost":{"wood":4,"scrap":2}, "required_skill_level":1, "build_time":5.0, "context":"exploration", "placement":"world", "effect_id":"storage_shelf", "description":"增加室内储物容量"},
+  "workbench": {"id":"workbench", "name":"简易工作台", "cost":{"wood":6,"scrap":4,"stone":2}, "required_skill_level":1, "build_time":7.0, "context":"exploration", "placement":"world", "effect_id":"workbench", "description":"解锁石斧、石镐和制作配方"},
+  "fire_basin": {"id":"fire_basin", "name":"火盆", "cost":{"wood":4,"metal":2,"stone":2}, "required_skill_level":2, "build_time":6.0, "context":"exploration", "placement":"world", "effect_id":"fire_basin", "description":"寒冷夜间额外燃料消耗 -1，屋内寒冷伤害 -2"},
+  "rain_collector": {"id":"rain_collector", "name":"雨水收集器", "cost":{"wood":8,"scrap":3,"metal":2}, "required_skill_level":3, "build_time":9.0, "context":"exploration", "placement":"world", "effect_id":"rain_collector", "description":"暴雨夜间收集 3 水"}
+}
