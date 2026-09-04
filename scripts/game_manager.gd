@@ -99,7 +99,7 @@ func start_exploration() -> void:
 
 func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
-	if not exploration_mode or phase != PHASE_DAY or time.paused: return
+	if not exploration_mode or phase != PHASE_DAY or time.paused or day_return_required: return
 	var before_elapsed := time.elapsed
 	time.advance(delta)
 	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
@@ -107,7 +107,6 @@ func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
 	if time.is_finished():
 		day_return_required = true
-		time.paused = true
 
 func begin_morning() -> void:
 	phase = PHASE_MORNING
@@ -520,7 +519,7 @@ func to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
-	return {"version":7,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+	return {"version":7,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
 
 func from_dict(data: Dictionary) -> void:
 	random_seed = int(data.get("random_seed", 14072026)); rng.seed = random_seed; rng.state = int(data.get("rng_state", rng.state))
@@ -537,7 +536,7 @@ func from_dict(data: Dictionary) -> void:
 	else: survival.from_dict(survival_data)
 	if not data.has("blueprints"):
 		blueprints.unlock("storage_shelf"); blueprints.unlock("workbench")
-	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true))
+	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true)); day_return_required = bool(data.get("day_return_required", false)); night_settlement_applied = bool(data.get("night_settlement_applied", false)); night_context = {}
 	survivors = []
 	for row in data.get("survivors", []): survivors.append(Survivor.from_dict(row))
 	daily_log = []

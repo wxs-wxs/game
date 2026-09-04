@@ -177,7 +177,7 @@ func _process(delta: float) -> void:
 
 func try_interact() -> void:
 	if build_mode != null and build_mode.active: return
-	if game.time.paused:
+	if game.time.paused and not game.day_return_required:
 		interaction_result.emit("游戏已暂停。")
 		return
 	if nearest == null:
@@ -186,7 +186,7 @@ func try_interact() -> void:
 	if active_interaction != null:
 		interaction_result.emit("交互进行中。")
 		return
-	if game.day_return_required and not (nearest is BedPoint):
+	if game.day_return_required and not (nearest is BedPoint) and not (nearest is HouseDoor) and nearest.interaction_time > 0.0:
 		interaction_result.emit("天色已晚，请先回到床边。")
 		return
 	var result := nearest.interact()
