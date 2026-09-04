@@ -92,6 +92,18 @@ var _storage_open := false
 var _fish_process_open := false
 var _build_selection_open := false
 var _build_selection_was_paused := false
+var _overlay_pause_depth := 0
+var _overlay_pause_was_paused := false
+var _overlay_pause_kinds: Dictionary = {}
+var event_panel: Panel
+var event_title_label: Label
+var event_body_label: Label
+var event_choice_buttons: Array[Button] = []
+var report_panel: Panel
+var report_content_label: Label
+var report_continue_button: Button
+var _event_open := false
+var _report_open := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
@@ -132,8 +144,13 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	_fish_process_open = false
 	_build_selection_open = false
 	_build_selection_was_paused = false
+	_overlay_pause_depth = 0
+	_overlay_pause_was_paused = false
+	_overlay_pause_kinds.clear()
 	_shortcut_open = false
 	_log_open = false
+	_event_open = false
+	_report_open = false
 	message_until = 0.0
 	_last_prompt = ""
 	_clear_hud()
@@ -229,6 +246,13 @@ func _clear_hud() -> void:
 	shortcut_button = null
 	shortcut_panel = null
 	shortcut_dim = null
+	event_panel = null
+	event_title_label = null
+	event_body_label = null
+	event_choice_buttons.clear()
+	report_panel = null
+	report_content_label = null
+	report_continue_button = null
 	log_panel = null
 	log_content_label = null
 	log_close_button = null
@@ -430,15 +454,14 @@ func _build_hud() -> void:
 	message_label.clip_text = true
 	feedback_panel.visible = false
 
-	# Interaction feedback is a focused, temporary panel so the world remains
-	# visible while a timed action is running.
-	var interaction_panel := _panel(Vector2(270, 315), Vector2(420, 54), PANEL_MID, hud)
-	interaction_name_label = _label(Vector2(15, 6), Vector2(390, 16), "", 6, TEXT_ACCENT, interaction_panel)
-	interaction_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	interaction_progress_bar = _progress_bar(Vector2(30, 27), Vector2(360, 7), interaction_panel)
+	# Timed actions use a compact bottom indicator so the map stays readable.
+	var interaction_panel := _panel(Vector2(390, 407), Vector2(180, 18), PANEL_DARK, hud)
+	interaction_name_label = _label(Vector2(6, 2), Vector2(42, 14), "", 3, TEXT_ACCENT, interaction_panel)
+	interaction_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	interaction_name_label.clip_text = true
+	interaction_progress_bar = _progress_bar(Vector2(48, 6), Vector2(126, 6), interaction_panel)
 	interaction_progress_bar.max_value = 1.0
-	interaction_detail_label = _label(Vector2(15, 42), Vector2(390, 12), "", 4, TEXT_MUTED, interaction_panel)
-	interaction_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	interaction_detail_label = null
 	interaction_panel.name = "InteractionPanel"
 	interaction_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	interaction_panel.visible = false
@@ -448,6 +471,8 @@ func _build_hud() -> void:
 	_build_storage_panel()
 	_build_shortcut_panel()
 	_build_log_panel()
+	_build_event_panel()
+	_build_report_panel()
 
 func _build_tool_selection_panel() -> void:
 	build_selection_dim = ColorRect.new()
@@ -553,9 +578,7 @@ func _open_build_selection() -> void:
 	if world != null and world.build_mode != null and world.build_mode.active:
 		world.build_mode.active = false
 	_build_selection_open = true
-	if game != null and game.time != null:
-		_build_selection_was_paused = bool(game.time.paused)
-		game.time.paused = true
+	_open_pause_overlay("build_selection")
 	_refresh_build_selection()
 	refresh()
 
@@ -563,8 +586,7 @@ func _close_build_selection() -> void:
 	if not _build_selection_open:
 		return
 	_build_selection_open = false
-	if game != null and game.time != null:
-		game.time.paused = _build_selection_was_paused
+	_close_pause_overlay("build_selection")
 	refresh()
 
 func _select_tool_and_craft(tool_id: String) -> void:
@@ -765,12 +787,13 @@ func _build_shortcut_panel() -> void:
 func _toggle_shortcut_panel() -> void:
 	if _build_selection_open:
 		_close_build_selection()
-	_shortcut_open = not _shortcut_open
 	if _shortcut_open:
-		_backpack_open = false
-		_storage_open = false
-		_fish_process_open = false
-		_log_open = false
+		_shortcut_open = false
+		_close_pause_overlay("shortcut")
+	else:
+		_close_standard_overlays()
+		_shortcut_open = true
+		_open_pause_overlay("shortcut")
 	refresh()
 
 func _build_log_panel() -> void:
@@ -787,20 +810,153 @@ func _build_log_panel() -> void:
 	log_content_label.clip_text = true
 	log_panel.visible = false
 
+func _build_event_panel() -> void:
+	event_panel = _panel(Vector2(177, 96), Vector2(606, 348), PANEL_MID, hud)
+	event_panel.name = "EventPanel"
+	event_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	event_panel.z_index = 35
+	event_title_label = _label_in(event_panel, Vector2(30, 24), Vector2(546, 30), "夜间事件", 9, TEXT_ACCENT)
+	event_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	event_body_label = _label_in(event_panel, Vector2(42, 72), Vector2(522, 66), "", 5, TEXT_MAIN)
+	event_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	event_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	event_body_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	for index in range(2):
+		var choice := _button_in(event_panel, Vector2(42, 166 + index * 72), Vector2(522, 54), "")
+		choice.name = "EventChoice%d" % index
+		choice.pressed.connect(_on_event_choice.bind(index))
+		event_choice_buttons.append(choice)
+	event_panel.visible = false
+
+func _build_report_panel() -> void:
+	report_panel = _panel(Vector2(177, 96), Vector2(606, 348), PANEL_MID, hud)
+	report_panel.name = "ReportPanel"
+	report_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	report_panel.z_index = 36
+	_label_in(report_panel, Vector2(30, 24), Vector2(546, 30), "夜间报告", 9, TEXT_ACCENT).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	report_content_label = _label_in(report_panel, Vector2(42, 72), Vector2(522, 210), "", 5, TEXT_MAIN)
+	report_content_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	report_content_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	report_content_label.clip_text = true
+	report_continue_button = _button_in(report_panel, Vector2(177, 294), Vector2(252, 36), "进入清晨")
+	report_continue_button.pressed.connect(_on_report_continue)
+	report_panel.visible = false
+
+func _open_pause_overlay(kind: String) -> void:
+	if _overlay_pause_kinds.has(kind):
+		return
+	if _overlay_pause_depth == 0 and game != null and game.time != null:
+		_overlay_pause_was_paused = bool(game.time.paused)
+		game.time.paused = true
+	_overlay_pause_kinds[kind] = true
+	_overlay_pause_depth += 1
+
+func _close_pause_overlay(kind: String) -> void:
+	if not _overlay_pause_kinds.has(kind):
+		return
+	_overlay_pause_kinds.erase(kind)
+	_overlay_pause_depth = maxi(0, _overlay_pause_depth - 1)
+	if _overlay_pause_depth == 0 and game != null and game.time != null:
+		game.time.paused = _overlay_pause_was_paused
+
+func has_pause_overlay() -> bool:
+	return _overlay_pause_depth > 0
+
+func _on_event_choice(index: int) -> void:
+	if game == null:
+		return
+	var result: Dictionary = game.choose_event(index)
+	if not bool(result.get("ok", false)):
+		_show_message(str(result.get("reason", "选择未执行。")), 2.5)
+		refresh()
+		return
+	_event_open = false
+	_close_pause_overlay("event")
+	if game.phase == GameManager.PHASE_REPORT:
+		show_report(game.report_lines)
+	elif game.phase == GameManager.PHASE_ENDED:
+		show_report(game.report_lines, true)
+	refresh()
+
+func _on_report_continue() -> void:
+	if game == null:
+		return
+	if game.phase == GameManager.PHASE_REPORT:
+		game.continue_from_report()
+	_report_open = false
+	_close_pause_overlay("report")
+	refresh()
+
+func show_event(event: Dictionary) -> void:
+	if event_panel == null or event.is_empty():
+		return
+	_event_open = true
+	_report_open = false
+	_close_pause_overlay("report")
+	_open_pause_overlay("event")
+	var data: Dictionary = event.get("data", {}) if event.get("data", {}) is Dictionary else {}
+	event_title_label.text = str(data.get("title", "夜间事件"))
+	event_body_label.text = str(data.get("text", "夜里发生了一些事情。"))
+	var choices: Array = data.get("choices", [])
+	for index in range(event_choice_buttons.size()):
+		var button: Button = event_choice_buttons[index]
+		if index >= choices.size():
+			button.visible = false
+			continue
+		var choice: Dictionary = choices[index] if choices[index] is Dictionary else {}
+		var cost: Dictionary = choice.get("cost", {}) if choice.get("cost", {}) is Dictionary else {}
+		button.visible = true
+		button.text = "%s\n%s" % [str(choice.get("label", "选择")), _cost_text(cost) if not cost.is_empty() else "不消耗资源"]
+		button.disabled = not game.resources.can_afford(cost)
+	event_panel.visible = true
+	report_panel.visible = false
+
+func show_report(lines: Array[String], terminal: bool = false) -> void:
+	if report_panel == null:
+		return
+	_report_open = true
+	_event_open = false
+	_close_pause_overlay("event")
+	_open_pause_overlay("report")
+	report_content_label.text = "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
+	report_continue_button.text = "结束游戏" if terminal else "进入清晨"
+	report_continue_button.disabled = terminal
+	report_panel.visible = true
+	event_panel.visible = false
+
 func toggle_log_panel() -> void:
 	if _build_selection_open:
 		_close_build_selection()
-	_log_open = not _log_open
 	if _log_open:
-		_backpack_open = false
-		_storage_open = false
-		_fish_process_open = false
-		_shortcut_open = false
+		_log_open = false
+		_close_pause_overlay("log")
+	else:
+		_close_standard_overlays()
+		_log_open = true
+		_open_pause_overlay("log")
 	refresh()
 
 func close_log_panel() -> void:
 	_log_open = false
+	_close_pause_overlay("log")
 	refresh()
+
+func _close_standard_overlays() -> void:
+	if _backpack_open:
+		_backpack_open = false
+		_close_pause_overlay("backpack")
+	if _storage_open:
+		_storage_open = false
+		_close_pause_overlay("storage")
+	if _fish_process_open:
+		_fish_process_open = false
+		_close_pause_overlay("fish_process")
+	if _shortcut_open:
+		_shortcut_open = false
+		_close_pause_overlay("shortcut")
+	if _log_open:
+		_log_open = false
+		_close_pause_overlay("log")
 
 func refresh() -> void:
 	if game == null:
@@ -846,6 +1002,7 @@ func refresh() -> void:
 
 	_update_target(hero)
 	_update_log()
+	_refresh_phase_overlay()
 	_update_buttons()
 	_refresh_backpack_panel()
 	_refresh_fish_process_panel()
@@ -879,7 +1036,7 @@ func refresh() -> void:
 func _update_buttons() -> void:
 	var inside := bool(game.in_house) if game != null else false
 	var paused := _is_paused()
-	var overlay_open := _backpack_open or _storage_open or _fish_process_open or _shortcut_open or _log_open or _build_selection_open
+	var overlay_open := _backpack_open or _storage_open or _fish_process_open or _shortcut_open or _log_open or _build_selection_open or _event_open or _report_open
 	if backpack_button != null:
 		backpack_button.visible = not overlay_open
 	if backpack_panel != null:
@@ -924,6 +1081,10 @@ func _update_buttons() -> void:
 		log_panel.visible = _log_open
 	if log_content_label != null and _log_open:
 		_refresh_log_panel()
+	if event_panel != null:
+		event_panel.visible = _event_open
+	if report_panel != null:
+		report_panel.visible = _report_open
 	for recipe_id in recipe_buttons:
 		var button: Button = recipe_buttons[recipe_id]
 		var status: Dictionary = game.crafting.recipe_status(str(recipe_id)) if game != null and game.crafting != null else {"can_craft":false}
@@ -935,25 +1096,44 @@ func _update_buttons() -> void:
 		interact_button.visible = nearby and not overlay_open
 		interact_button.disabled = not can_interact
 
+func _refresh_phase_overlay() -> void:
+	if game == null:
+		return
+	match str(game.phase):
+		GameManager.PHASE_EVENT:
+			if not game.events.current_event.is_empty():
+				show_event(game.events.current_event)
+		GameManager.PHASE_REPORT:
+			show_report(game.report_lines)
+		GameManager.PHASE_ENDED:
+			show_report(game.report_lines, true)
+		_:
+			if _event_open:
+				_event_open = false
+				_close_pause_overlay("event")
+			if _report_open:
+				_report_open = false
+				_close_pause_overlay("report")
+
 func toggle_backpack() -> void:
 	if _build_selection_open:
 		_close_build_selection()
 	if _backpack_open:
 		close_backpack()
 		return
-	_storage_open = false
-	_fish_process_open = false
-	_log_open = false
-	_shortcut_open = false
+	_close_standard_overlays()
 	_backpack_open = true
+	_open_pause_overlay("backpack")
 	refresh()
 
 func close_backpack() -> void:
 	_backpack_open = false
+	_close_pause_overlay("backpack")
 	refresh()
 
 func close_storage() -> void:
 	_storage_open = false
+	_close_pause_overlay("storage")
 	refresh()
 
 func close_overlay() -> bool:
@@ -980,8 +1160,9 @@ func close_overlay() -> bool:
 func _on_storage_open_requested() -> void:
 	if _build_selection_open:
 		_close_build_selection()
-	_backpack_open = false
+	_close_standard_overlays()
 	_storage_open = true
+	_open_pause_overlay("storage")
 	refresh()
 
 func _on_fish_processing_requested(_fish_key: String) -> void:
@@ -989,18 +1170,21 @@ func _on_fish_processing_requested(_fish_key: String) -> void:
 		_close_build_selection()
 	# A catch is already in the backpack. Open that view first so the player
 	# can inspect the fish slot and choose whether to process it.
+	_close_standard_overlays()
 	_backpack_open = true
-	_storage_open = false
-	_fish_process_open = false
+	_open_pause_overlay("backpack")
 	refresh()
 
 func _open_fish_processing_from_backpack() -> void:
 	_backpack_open = false
+	_close_pause_overlay("backpack")
 	_fish_process_open = true
+	_open_pause_overlay("fish_process")
 	refresh()
 
 func close_fish_processing() -> void:
 	_fish_process_open = false
+	_close_pause_overlay("fish_process")
 	refresh()
 
 func _refresh_backpack_panel() -> void:
@@ -1245,7 +1429,7 @@ func _on_interaction_progress(name: String, progress: float) -> void:
 		interaction_progress_bar.value = clamped
 	var panel := interaction_progress_bar.get_parent() if interaction_progress_bar != null else null
 	if panel != null:
-		panel.visible = false
+		panel.visible = not name.is_empty() and clamped >= 0.0 and clamped < 1.0
 	if interaction_detail_label != null:
 		interaction_detail_label.text = "动作进行中" if clamped > 0.0 and clamped < 1.0 else ""
 
@@ -1354,12 +1538,7 @@ func _is_usable_item(key: String) -> bool:
 	return key in ["food", "medicine", "cooked_food", "bandage", "torch", "trap"] or ResourceManager.FISH_KEYS.has(key) or ResourceManager.COOKED_FISH_KEYS.has(key)
 
 func _on_tool_selection_requested() -> void:
-	if _backpack_open:
-		_backpack_open = false
-	_storage_open = false
-	_fish_process_open = false
-	_shortcut_open = false
-	_log_open = false
+	_close_standard_overlays()
 	_open_build_selection()
 
 func cycle_policy() -> void:
