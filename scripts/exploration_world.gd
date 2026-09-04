@@ -15,6 +15,7 @@ const MAP_SIZE := Vector2(1920, 1080)
 const INTERIOR_OFFSET := Vector2(2400, 0)
 const INTERIOR_ROOM_SIZE := Vector2(180, 180)
 const CAMERA_LOOK_AHEAD := Vector2(0, -48)
+const DUSK_BLOCKED_ACTIONS := ["chop", "mine_stone", "fish", "gather", "search_ruins", "collect_branch", "pickup", "build", "construct"]
 const OUTDOOR_CAMERA_ZOOM := Vector2(1.35, 1.35)
 const INTERIOR_CAMERA_ZOOM := Vector2(2.2, 2.2)
 const Assets = preload("res://scripts/ninja_adventure_assets.gd")
@@ -186,7 +187,7 @@ func try_interact() -> void:
 	if active_interaction != null:
 		interaction_result.emit("交互进行中。")
 		return
-	if game.day_return_required and not (nearest is BedPoint) and not (nearest is HouseDoor) and nearest.interaction_time > 0.0:
+	if game.day_return_required and nearest.action_id in DUSK_BLOCKED_ACTIONS:
 		interaction_result.emit("天色已晚，请先回到床边。")
 		return
 	var result := nearest.interact()

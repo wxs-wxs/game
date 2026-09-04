@@ -20,6 +20,17 @@ func _init() -> void:
 	var world := ExplorationWorld.new()
 	root.add_child(world)
 	world.setup(game)
+	var campfire = world.interactions.filter(func(point): return point is CampfirePoint)[0]
+	world.player.position = campfire.position
+	world._process(0.1)
+	world.try_interact()
+	assert(world.is_interacting())
+	world.cancel_interaction()
+	var forage = world.interactions.filter(func(point): return point is ForageSpot)[0]
+	world.player.position = forage.position
+	world._process(0.1)
+	world.try_interact()
+	assert(not world.is_interacting())
 	var door = world.interactions.filter(func(point): return point is HouseDoor)[0]
 	world.player.position = door.position
 	world._process(0.1)
