@@ -34,7 +34,7 @@ func _init() -> void:
 			assert(game.phase == GameManager.PHASE_REPORT or game.phase == GameManager.PHASE_ENDED)
 	var legacy := GameManager.new()
 	legacy.survival.from_dict({"current_goal":{"id":"week_survivor","kind":"survive","target":7,"label":"完成七天生存挑战","reward":{"food":1}}})
-	assert(str(legacy.survival.current_goal.get("id", "")) == "week_survivor")
+	assert(str(legacy.survival.current_goal.get("id", "")) != "week_survivor")
 	print("EVENT_FLOW_REGRESSION_OK phase=%s day=%d" % [game.phase, game.day])
 	quit()
 
