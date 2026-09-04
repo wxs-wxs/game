@@ -12,6 +12,11 @@ const PHASE_EVENT := "event"
 const PHASE_REPORT := "report"
 const PHASE_ENDED := "ended"
 
+const NORMAL_BODY_TEMPERATURE_C := 37.0
+const BODY_TEMPERATURE_DAMAGE_THRESHOLD_C := 35.0
+const BODY_TEMPERATURE_DAMAGE_INTERVAL := 8.0
+const WEATHER_TEMPERATURES := {"晴朗": 16.0, "多云": 11.0, "浓雾": 7.0, "暴雨": 9.0, "寒冷": -5.0}
+
 var resources := ResourceManager.new()
 var time := TimeManager.new()
 var tasks := TaskSystem.new()
@@ -35,6 +40,7 @@ var random_seed: int = 14072026
 var day: int = 1
 var phase: String = PHASE_MORNING
 var weather: String = "晴朗"
+var environment_temperature: float = 16.0
 var survivors: Array = []
 var daily_log: Array[String] = []
 var report_lines: Array[String] = []
@@ -44,6 +50,9 @@ var safety: int = 50
 var won: bool = false
 var end_reason: String = ""
 var exploration_mode: bool = true
+var day_return_required: bool = false
+var night_settlement_applied: bool = false
+var night_context: Dictionary = {}
 var torch_bonus_pending := false
 var deployed_traps: int = 0
 
@@ -67,7 +76,8 @@ func new_game(seed_value: int = 14072026) -> void:
 	blueprints.unlock("storage_shelf")
 	blueprints.unlock("workbench")
 	resources.set_workbench_available(false)
-	day = 1; phase = PHASE_MORNING; weather = "晴朗"; no_food_days = 0; safety = 50; exploration_mode = true
+	day = 1; phase = PHASE_MORNING; weather = "晴朗"; environment_temperature = 16.0; no_food_days = 0; safety = 50; exploration_mode = true
+	day_return_required = false; night_settlement_applied = false; night_context = {}
 	in_house = false; house_id = "starter_hut"; house_level = 0; house_fire_lit = false; outdoor_position = Vector2(180, 155); built_facilities = []
 	torch_bonus_pending = false; deployed_traps = 0
 	daily_log = ["第 1 天清晨，营地在灰烬中醒来。"]
@@ -78,6 +88,9 @@ func new_game(seed_value: int = 14072026) -> void:
 
 func start_exploration() -> void:
 	phase = PHASE_DAY
+	day_return_required = false
+	night_settlement_applied = false
+	night_context = {}
 	time.reset_day()
 	exploration_mode = true
 	survival.begin_day(day, weather, self)
@@ -87,23 +100,48 @@ func start_exploration() -> void:
 func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
 	if not exploration_mode or phase != PHASE_DAY or time.paused: return
+	var before_elapsed := time.elapsed
 	time.advance(delta)
+	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
 	survival.observe_resources(self)
 	if check_protagonist_health(): return
-	if time.is_finished(): _finish_exploration_day()
+	if time.is_finished():
+		day_return_required = true
+		time.paused = true
 
-func _finish_exploration_day() -> void:
-	var lines := _night_settlement()
-	lines.append_array(survival.settle_day(self))
-	for line in lines: daily_log.append(line)
-	if audio != null: audio.play_music("night")
-	if check_protagonist_health(): return
-	day += 1
-	weather = _roll_weather()
+func begin_morning() -> void:
+	phase = PHASE_MORNING
+	day_return_required = false
+	night_settlement_applied = false
+	night_context = {}
 	time.reset_day()
 	survival.begin_day(day, weather, self)
-	daily_log.append("第 %d 天清晨：%s。" % [day, weather])
-	if audio != null: audio.play_music("day")
+
+func advance(delta: float) -> void:
+	if check_protagonist_health(): return
+	if exploration_mode:
+		advance_exploration(delta)
+	else:
+		tick(delta)
+
+func finish_exploration_day() -> Dictionary:
+	if phase != PHASE_DAY or not day_return_required:
+		return {"ok": false, "phase": phase, "reason": "请先回到床边。"}
+	if night_settlement_applied:
+		return {"ok": false, "phase": phase, "reason": "今天已经结算。"}
+	return _resolve_night()
+
+func _resolve_night() -> Dictionary:
+	night_settlement_applied = true
+	report_lines = _night_settlement()
+	if check_protagonist_health():
+		return {"ok": true, "phase": phase, "reason": "主角生命值归零，游戏结束。"}
+	phase = PHASE_REPORT
+	return {"ok": true, "phase": phase, "reason": "夜间结算完成。"}
+
+func _finish_exploration_day() -> void:
+	day_return_required = true
+	finish_exploration_day()
 
 func start_day() -> Dictionary:
 	if phase != PHASE_MORNING: return {"ok":false,"reason":"当前不能开始白天"}
@@ -117,7 +155,9 @@ func start_day() -> Dictionary:
 func tick(delta: float) -> bool:
 	if check_protagonist_health(): return false
 	if phase != PHASE_DAY: return false
+	var before_elapsed := time.elapsed
 	var task_ticks := time.advance(delta)
+	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
 	for index in task_ticks:
 		_resolve_work_tick()
 		if check_protagonist_health(): return true
@@ -136,9 +176,11 @@ func finish_day() -> void:
 
 func force_finish_day() -> void:
 	if phase != PHASE_DAY: return
+	var before_elapsed := time.elapsed
 	var remaining_ticks: int = time.remaining_work_ticks()
 	for index in range(maxi(0, remaining_ticks)): _resolve_work_tick()
 	time.elapsed = TimeManager.DAY_SECONDS
+	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
 	finish_day()
 
 func _resolve_work_tick() -> void:
@@ -173,8 +215,7 @@ func continue_from_report() -> void:
 	if check_protagonist_health(): return
 	day += 1
 	weather = _roll_weather()
-	phase = PHASE_MORNING
-	survival.begin_day(day, weather, self)
+	begin_morning()
 	daily_log = ["第 %d 天清晨：%s。" % [day, weather]]
 
 func assign_work(survivor_index: int, work_name: String) -> Dictionary:
@@ -245,7 +286,7 @@ func _canonical_built_ids() -> Array[String]:
 
 func upgrade_house() -> Dictionary:
 	if in_house: return {"ok":false, "reason":"请在小屋外进行升级。"}
-	var costs := [{"wood":6,"fiber":3,"scrap":2}, {"wood":10,"scrap":5,"stone":4,"metal":2}, {"wood":18,"stone":8,"metal":5,"scrap":6}]
+	var costs := [{"wood":6,"fiber":3,"metal":1}, {"wood":10,"stone":4,"metal":2}, {"wood":18,"stone":8,"metal":3}]
 	if house_level >= costs.size(): return {"ok":false, "reason":"小屋已经达到最高等级。"}
 	var cost: Dictionary = costs[house_level]
 	if not resources.can_afford(cost): return {"ok":false, "reason":resources.missing_cost_text(cost)}
@@ -269,6 +310,44 @@ func toggle_pause() -> void:
 
 func get_protagonist() -> Survivor:
 	return survivors[0] if not survivors.is_empty() else null
+
+func get_environment_temperature() -> float:
+	var base := float(WEATHER_TEMPERATURES.get(weather, 12.0))
+	var daylight := sin(clampf(time.progress(), 0.0, 1.0) * PI) * 7.0
+	var temperature := base + daylight
+	if in_house: temperature += 10.0
+	if in_house and house_fire_lit: temperature += 7.0
+	if buildings != null and buildings.has("fire_basin"): temperature += 4.0
+	if not in_house:
+		var position := outdoor_position
+		if exploration_world != null and exploration_world.player != null:
+			position = exploration_world.player.global_position
+		if position.distance_to(Vector2(210, 153)) <= 110.0: temperature += 6.0
+	environment_temperature = snappedf(temperature, 0.1)
+	return environment_temperature
+
+func get_temperature_status() -> Dictionary:
+	var hero := get_protagonist()
+	return {"environment":get_environment_temperature(), "body":float(hero.body_temperature) if hero != null else NORMAL_BODY_TEMPERATURE_C, "threshold":BODY_TEMPERATURE_DAMAGE_THRESHOLD_C}
+
+func _update_temperature(simulation_seconds: float) -> void:
+	if simulation_seconds <= 0.0: return
+	var hero := get_protagonist()
+	if hero == null or not hero.alive: return
+	var environment := get_environment_temperature()
+	# Warm shelter aims at normal body temperature. Outdoors in a cold
+	# environment pulls the target down, so hypothermia develops over time.
+	var target := clampf(NORMAL_BODY_TEMPERATURE_C + (environment - 12.0) * 0.35, 28.0, NORMAL_BODY_TEMPERATURE_C)
+	var response := 0.006 if target < NORMAL_BODY_TEMPERATURE_C else 0.009
+	hero.body_temperature = clampf(hero.body_temperature + (target - hero.body_temperature) * response * simulation_seconds, -50.0, NORMAL_BODY_TEMPERATURE_C)
+	if hero.body_temperature < BODY_TEMPERATURE_DAMAGE_THRESHOLD_C:
+		hero.temperature_damage_accumulator += simulation_seconds
+		while hero.temperature_damage_accumulator >= BODY_TEMPERATURE_DAMAGE_INTERVAL:
+			hero.temperature_damage_accumulator -= BODY_TEMPERATURE_DAMAGE_INTERVAL
+			hero.apply_change("health", -1)
+			if check_protagonist_health(): return
+	else:
+		hero.temperature_damage_accumulator = maxf(0.0, hero.temperature_damage_accumulator - simulation_seconds * 0.5)
 
 func check_protagonist_health() -> bool:
 	if phase == PHASE_ENDED:
@@ -402,18 +481,7 @@ func _night_settlement() -> Array[String]:
 	if meals < alive.size():
 		lines.append("食物不足：%d 人空腹，生命与士气下降。" % [alive.size() - meals])
 	else: lines.append("配给完成：消耗 %d 食物。" % meals)
-	var fuel_need := 2 + (2 if weather == "寒冷" else 0) - buildings.fuel_discount()
-	if weather == "寒冷": fuel_need -= buildings.cold_fuel_discount()
-	fuel_need = max(1, fuel_need)
-	var fuel_used := mini(resources.get_amount("fuel"), fuel_need)
-	resources.add("fuel", -fuel_used)
-	if fuel_used < fuel_need:
-		change_all("morale", -5)
-		if weather == "寒冷":
-			var cold_damage := 4 if not in_house else maxi(0, 2 - buildings.indoor_cold_damage_reduction())
-			if cold_damage > 0: change_all("health", -cold_damage)
-		lines.append("燃料不足，营地在黑暗与寒冷中度过。")
-	else: lines.append("篝火维持：消耗 %d 燃料。" % fuel_used)
+	lines.append("夜间温度结算：低温伤害已在探索过程中实时计算。")
 	if weather == "暴雨":
 		var collected_water := buildings.rain_water_yield()
 		if collected_water > 0:
@@ -452,7 +520,7 @@ func to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
-	return {"version":6,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"exploration_mode":exploration_mode,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+	return {"version":7,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
 
 func from_dict(data: Dictionary) -> void:
 	random_seed = int(data.get("random_seed", 14072026)); rng.seed = random_seed; rng.state = int(data.get("rng_state", rng.state))
@@ -469,7 +537,7 @@ func from_dict(data: Dictionary) -> void:
 	else: survival.from_dict(survival_data)
 	if not data.has("blueprints"):
 		blueprints.unlock("storage_shelf"); blueprints.unlock("workbench")
-	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); exploration_mode = bool(data.get("exploration_mode", true))
+	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true))
 	survivors = []
 	for row in data.get("survivors", []): survivors.append(Survivor.from_dict(row))
 	daily_log = []

@@ -14,8 +14,14 @@ func _init() -> void:
 	restored.from_dict(saved)
 	assert(restored.get_survival_status().get("policy", {}).get("id", "") == "fortify")
 	game.time.elapsed = TimeManager.DAY_SECONDS
-	game._finish_exploration_day()
-	assert(game.survival.last_settled_day == 1)
-	assert(game.day == 2 and game.phase == GameManager.PHASE_DAY)
+	game.advance(0.1)
+	assert(game.day_return_required)
+	var finish_result: Dictionary = game.finish_exploration_day()
+	assert(bool(finish_result.get("ok", false)))
+	if game.phase == GameManager.PHASE_EVENT:
+		assert(bool(game.choose_event(0).get("ok", false)))
+	assert(game.phase == GameManager.PHASE_REPORT)
+	game.continue_from_report()
+	assert(game.day == 2 and game.phase == GameManager.PHASE_MORNING)
 	print("STRATEGY_SMOKE_OK policy=%s settled_day=%d" % [game.survival.policy_id, game.survival.last_settled_day])
 	quit()

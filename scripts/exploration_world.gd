@@ -6,6 +6,7 @@ signal interaction_result(message: String)
 signal interaction_progress_changed(name: String, progress: float)
 signal storage_open_requested
 signal fish_processing_requested(fish_key: String)
+signal tool_selection_requested
 
 const MAP_SIZE := Vector2(1920, 1080)
 # Keep the room outside the outdoor map's full draw and collision range.  The
@@ -95,7 +96,9 @@ func setup(manager: GameManager) -> void:
 	water_tile = Assets.texture(WATER_ATLAS)
 	_build_collisions()
 	_build_points()
-	if game != null and game.buildings != null and game.buildings.has("storage_shelf"): register_outdoor_shelf()
+	if game != null and game.buildings != null:
+		if game.buildings.has("storage_shelf"): register_outdoor_shelf()
+		if game.buildings.has("workbench"): register_outdoor_workbench()
 	_build_art_sprites()
 	_build_ground_decorations()
 	fish_school = preload("res://scripts/river_fish_school.gd").new()
@@ -183,6 +186,9 @@ func try_interact() -> void:
 	if active_interaction != null:
 		interaction_result.emit("交互进行中。")
 		return
+	if game.day_return_required and not (nearest is BedPoint):
+		interaction_result.emit("天色已晚，请先回到床边。")
+		return
 	var result := nearest.interact()
 	interaction_result.emit(str(result.get("message", result.get("reason", ""))))
 	interaction_changed.emit(nearest.prompt_text())
@@ -239,6 +245,16 @@ func register_outdoor_shelf() -> void:
 	var shelf := preload("res://scripts/storage_shelf_point.gd").new()
 	shelf.unique_id = "storage_shelf_outdoor"
 	_add_point(shelf, game.outdoor_position + Vector2(26, 0))
+
+func register_outdoor_workbench(at: Vector2 = Vector2(-99999, -99999)) -> void:
+	for point in interactions:
+		if is_instance_valid(point) and point.unique_id == "workbench_outdoor":
+			if at.x > -90000.0: point.position = at
+			return
+	var workbench := preload("res://scripts/construction_facility_point.gd").new()
+	workbench.configure("workbench_outdoor", "简易工作台", Color("b8a16b"))
+	var position := at if at.x > -90000.0 else game.outdoor_position + Vector2(32, 0)
+	_add_point(workbench, position)
 
 func register_interior_point(point: InteractionPoint) -> void:
 	if point == null or not is_instance_valid(point): return
@@ -342,7 +358,7 @@ func serialize_state() -> Dictionary:
 	var interaction_data: Array = []
 	for point in interactions:
 		if not is_instance_valid(point): continue
-		var row := {"id":point.unique_id, "cooldown":point.cooldown_remaining, "uses_left":point.uses_left, "progress":point.interaction_progress if point.interacting else 0.0, "active":point.interacting, "visible":point.visible, "respawn":point.respawn_remaining}
+		var row := {"id":point.unique_id, "position":[point.position.x, point.position.y], "cooldown":point.cooldown_remaining, "uses_left":point.uses_left, "progress":point.interaction_progress if point.interacting else 0.0, "active":point.interacting, "visible":point.visible, "respawn":point.respawn_remaining}
 		if point is TreeSpot:
 			row["stump"] = point.is_stump
 			row["regrow"] = point.regrow_remaining
@@ -362,9 +378,14 @@ func restore_state(data: Dictionary) -> void:
 	var by_id := {}
 	active_interaction = null
 	for row in data.get("interactions", []): by_id[str(row.get("id", ""))] = row
+	if game != null and game.buildings != null and game.buildings.has("workbench") and not _has_outdoor_workbench():
+		register_outdoor_workbench()
 	for point in interactions:
 		if not is_instance_valid(point) or not by_id.has(point.unique_id): continue
 		var row: Dictionary = by_id[point.unique_id]
+		var saved_point_position: Variant = row.get("position", [])
+		if saved_point_position is Array and saved_point_position.size() >= 2:
+			point.position = Vector2(float(saved_point_position[0]), float(saved_point_position[1]))
 		point.cooldown_remaining = float(row.get("cooldown", 0.0)); point.uses_left = int(row.get("uses_left", -1)); point.interaction_progress = float(row.get("progress", 0.0)); point.interacting = bool(row.get("active", false)); point.respawn_remaining = float(row.get("respawn", 0.0))
 		if point is TreeSpot:
 			point.is_stump = bool(row.get("stump", false))
@@ -381,6 +402,12 @@ func restore_state(data: Dictionary) -> void:
 		if point.interacting: active_interaction = point
 	if bool(data.get("in_house", false)) and not is_inside: enter_house()
 	elif not bool(data.get("in_house", false)) and is_inside: exit_house()
+
+func _has_outdoor_workbench() -> bool:
+	for point in interactions:
+		if is_instance_valid(point) and point.unique_id == "workbench_outdoor" and point.get_parent() == self:
+			return true
+	return false
 
 func _set_camera_limits(left: int, top: int, right: int, bottom: int) -> void:
 	for child in player.get_children():
@@ -410,6 +437,8 @@ func _on_point_completed(point: InteractionPoint, result: Dictionary) -> void:
 		storage_open_requested.emit()
 	if result.has("fish_key"):
 		fish_processing_requested.emit(str(result.get("fish_key", "")))
+	if bool(result.get("open_tool_selection", false)):
+		tool_selection_requested.emit()
 
 func _build_collisions() -> void:
 	# There is intentionally no invisible perimeter body. The expanded field is

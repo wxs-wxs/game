@@ -25,7 +25,8 @@ func _init() -> void:
 	world._process(0.1)
 	world.try_interact()
 	assert(world.is_interacting())
-	var before_food := game.resources.get_amount("food")
+	var before_fish := 0
+	for fish_key in ResourceManager.FISH_KEYS: before_fish += int(game.resources.backpack.get(fish_key, 0))
 	world.player.velocity = Vector2.RIGHT
 	world.player._physics_process(0.2)
 	assert(world.player.velocity == Vector2.ZERO)
@@ -33,7 +34,9 @@ func _init() -> void:
 	assert(world.is_interacting())
 	world._process(2.2)
 	assert(not world.is_interacting())
-	assert(game.resources.get_amount("food") >= before_food)
+	var after_fish := 0
+	for fish_key in ResourceManager.FISH_KEYS: after_fish += int(game.resources.backpack.get(fish_key, 0))
+	assert(after_fish > before_fish)
 	var forage = by_id["forest_berries"]
 	world.player.position = forage.position; world._process(0.1); world.try_interact()
 	var paused_progress: float = forage.interaction_progress
@@ -91,11 +94,11 @@ func _init() -> void:
 	assert("storage_shelf" in game.built_facilities)
 	assert(game.house_level == 1)
 	assert(game.resources.get_amount("stone") >= 0)
-	var old_data := {"version":2, "resources":{"amounts":{"food":2,"wood":1,"medicine":0,"fuel":0,"scrap":0}}}
+	var old_data := {"version":2, "resources":{"amounts":{"food":2,"wood":1,"medicine":0}}}
 	game.from_dict(old_data)
 	assert(game.resources.get_amount("stone") == 4)
-	var doomed := GameManager.new(); doomed.start_exploration(); doomed.get_protagonist().health = 1; doomed.get_protagonist().hunger = 0; doomed.resources.amounts["food"] = 0; doomed._finish_exploration_day(); assert(doomed.phase == GameManager.PHASE_ENDED and not doomed.won)
-	var long_run := GameManager.new(); long_run.start_exploration(); long_run.day = 7; long_run._finish_exploration_day(); assert(long_run.phase == GameManager.PHASE_DAY and long_run.day == 8 and not long_run.won)
+	var doomed := GameManager.new(); doomed.start_exploration(); doomed.get_protagonist().health = 1; doomed.get_protagonist().hunger = 0; doomed.resources.amounts["food"] = 0; doomed.day_return_required = true; var doomed_result: Dictionary = doomed.finish_exploration_day(); assert(bool(doomed_result.get("ok", false))); assert(doomed.phase == GameManager.PHASE_ENDED and not doomed.won)
+	var long_run := GameManager.new(); long_run.start_exploration(); long_run.day = 7; long_run.day_return_required = true; var long_result: Dictionary = long_run.finish_exploration_day(); assert(bool(long_result.get("ok", false))); assert(long_run.phase == GameManager.PHASE_REPORT and not long_run.won); long_run.continue_from_report(); assert(long_run.day == 8 and long_run.phase == GameManager.PHASE_MORNING)
 	var zero_health := GameManager.new(); zero_health.start_exploration(); zero_health.get_protagonist().health = 0; zero_health.advance_exploration(0.1); assert(zero_health.phase == GameManager.PHASE_ENDED and not zero_health.won and zero_health.end_reason.contains("生命值归零"))
 	print("SMOKE_OK audio=%s indoor=%s build_xp=%d" % [audio.current_music, world.is_inside, game.construction_skill.experience])
 	quit()

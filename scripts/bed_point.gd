@@ -61,6 +61,9 @@ func perform_interaction() -> Dictionary:
 	var hero := game.get_protagonist() if game != null else null
 	if hero == null: return {"ok":false, "message":"没有可休息的主角。", "failed":true}
 	if sleep_mode:
+		if game.day_return_required:
+			var result: Dictionary = game.finish_exploration_day()
+			return {"ok":bool(result.get("ok", false)), "message":str(result.get("reason", "进入夜间结算。")), "failed":not bool(result.get("ok", false))}
 		if game.phase != GameManager.PHASE_DAY: return {"ok":false, "message":"现在还不能睡觉。", "failed":true}
 		if not rested_this_day:
 			rested_this_day = true
@@ -68,8 +71,8 @@ func perform_interaction() -> Dictionary:
 			hero.apply_change("energy", 20); hero.apply_change("health", 2)
 			return {"ok":true, "message":"在床铺上稍作休整。再次交互即可睡觉。"}
 		rested_this_day = false
-		game._finish_exploration_day()
-		return {"ok":true, "message":"进入夜间结算。"}
+		var result: Dictionary = game.finish_exploration_day()
+		return {"ok":bool(result.get("ok", false)), "message":str(result.get("reason", "进入夜间结算。")), "failed":not bool(result.get("ok", false))}
 	hero.apply_change("energy", 20); hero.apply_change("health", 2)
 	return {"ok":true, "message":"恢复了体力。"}
 

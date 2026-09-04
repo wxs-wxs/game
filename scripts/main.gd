@@ -12,7 +12,6 @@ func _ready() -> void:
 	audio.name = "AudioManager"
 	add_child(audio)
 	game.audio = audio
-	game.start_exploration()
 	world = ExplorationWorld.new()
 	world.name = "ExplorationWorld"
 	add_child(world)
@@ -21,9 +20,10 @@ func _ready() -> void:
 	ui.name = "HUD"
 	add_child(ui)
 	ui.setup(game, world)
+	game.begin_morning()
 
 func _process(delta: float) -> void:
-	game.advance_exploration(delta)
+	game.advance(delta)
 	refresh_accumulator += delta
 	if refresh_accumulator >= 0.08:
 		refresh_accumulator = 0.0
