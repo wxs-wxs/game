@@ -11,6 +11,7 @@ const PHASE_DAY := "day"
 const PHASE_EVENT := "event"
 const PHASE_REPORT := "report"
 const PHASE_ENDED := "ended"
+const SAVE_VERSION := 8
 
 const NORMAL_BODY_TEMPERATURE_C := 37.0
 const BODY_TEMPERATURE_DAMAGE_THRESHOLD_C := 35.0
@@ -597,14 +598,17 @@ func to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
-	return {"version":8,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+	return {"version":SAVE_VERSION,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"night_context":night_context.duplicate(true),"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
 
 func from_dict(data: Dictionary) -> void:
+	var raw_version := int(data.get("version", 0))
+	saves = SaveSystem.new()
+	data = saves.migrate(data)
 	random_seed = int(data.get("random_seed", 14072026)); rng.seed = random_seed; rng.state = int(data.get("rng_state", rng.state))
 	resources = ResourceManager.new(); resources.from_dict(data.get("resources", {}))
 	time = TimeManager.new(); time.from_dict(data.get("time", {}))
 	tasks = TaskSystem.new(); buildings = BuildingSystem.new(); buildings.from_dict(data.get("buildings", {}))
-	events = EventSystem.new(); events.from_dict(data.get("events", {})); saves = SaveSystem.new()
+	events = EventSystem.new(); events.from_dict(data.get("events", {}))
 	blueprints = BlueprintSystemClass.new(); blueprints.setup(buildings); blueprints.from_dict(data.get("blueprints", {}))
 	construction_skill = ConstructionSkillClass.new(); construction_skill.from_dict(data.get("construction_skill", {}))
 	crafting = CraftingSystemClass.new(); crafting.setup(self)
@@ -627,13 +631,22 @@ func from_dict(data: Dictionary) -> void:
 				fire_states[source_id] = merged_state
 	if not data.has("blueprints"):
 		blueprints.unlock("storage_shelf"); blueprints.unlock("workbench")
-	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true)); day_return_required = bool(data.get("day_return_required", false)); night_settlement_applied = bool(data.get("night_settlement_applied", false)); night_context = {}
+	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true)); day_return_required = bool(data.get("day_return_required", false)); night_settlement_applied = bool(data.get("night_settlement_applied", false)); night_context = data.get("night_context", {}) if data.get("night_context", {}) is Dictionary else {}
 	survivors = []
 	for row in data.get("survivors", []): survivors.append(Survivor.from_dict(row))
 	daily_log = []
 	for line in data.get("daily_log", []): daily_log.append(str(line))
 	if migrate_legacy_house_fire:
 		daily_log.append("旧存档兼容：炉火获得一次初始燃料。")
+	if raw_version < SaveSystem.CURRENT_VERSION:
+		var migration_refund: Variant = data.get("migration_refund", {})
+		if migration_refund is Dictionary and not migration_refund.is_empty():
+			var refunded: Array[String] = []
+			for key in migration_refund:
+				var amount := resources.add(str(key), maxi(0, int(migration_refund[key])))
+				if amount > 0: refunded.append("%s+%d" % [resources.display_name(str(key)), amount])
+			if not refunded.is_empty():
+				daily_log.append("旧存档兼容：重复施工材料已返还（%s）。" % "、".join(refunded))
 	report_lines = []
 	for line in data.get("report_lines", []): report_lines.append(str(line))
 	key_choices = []

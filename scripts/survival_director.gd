@@ -311,6 +311,8 @@ func from_dict(data: Dictionary) -> void:
 	last_settled_day = int(data.get("last_settled_day", -1))
 	current_goal = data.get("current_goal", {})
 	if not current_goal is Dictionary: current_goal = {}
+	if str(current_goal.get("id", "")) == "week_survivor":
+		current_goal = {}
 	if not current_goal.is_empty():
 		var goal_resource := str(current_goal.get("resource", ""))
 		if not goal_resource.is_empty() and not ResourceManager.RESOURCE_KEYS.has(goal_resource): current_goal = {}

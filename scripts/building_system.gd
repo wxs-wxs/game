@@ -169,12 +169,21 @@ func from_dict(data: Dictionary) -> void:
 		for key in saved_unlocked:
 			if definitions.has(str(key)) and str(key) not in unlocked: unlocked.append(str(key))
 	var saved_active = data.get("active_project", {})
-	active_project = saved_active if saved_active is Dictionary else {}
+	active_project = {}
+	if saved_active is Dictionary:
+		var active_id := str(saved_active.get("id", ""))
+		if definitions.has(active_id):
+			active_project = saved_active.duplicate(true)
 	var saved_world = data.get("world_projects", {})
 	world_projects = {}
 	if active_project.is_empty() and saved_world is Dictionary and not saved_world.is_empty():
-		var legacy_project: Dictionary = saved_world.values()[0]
-		if legacy_project is Dictionary: active_project = legacy_project.duplicate(true)
+		for legacy_value in saved_world.values():
+			if not legacy_value is Dictionary:
+				continue
+			var legacy_id := str(legacy_value.get("id", ""))
+			if definitions.has(legacy_id):
+				active_project = legacy_value.duplicate(true)
+				break
 	var saved_effects = data.get("effect_applied", {})
 	effect_applied = saved_effects if saved_effects is Dictionary else {}
 	guard_power = int(data.get("guard_power", 0)); last_completed_id = str(data.get("last_completed_id", ""))
