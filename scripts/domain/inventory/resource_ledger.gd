@@ -31,11 +31,20 @@ func add(key: String, delta: int) -> int:
 	var before := get_amount(key)
 	if delta < 0:
 		var removed := mini(-delta, before)
+		if inventory != null:
+			var from_storage := mini(removed, int(inventory.storage.get(key, 0)))
+			inventory.storage[key] = int(inventory.storage.get(key, 0)) - from_storage
+			var remaining := removed - from_storage
+			if remaining > 0:
+				var from_backpack := mini(remaining, int(inventory.backpack.get(key, 0)))
+				inventory.backpack[key] = int(inventory.backpack.get(key, 0)) - from_backpack
 		amounts[key] = before - removed
 		return removed
 	amounts[key] = mini(int(capacities[key]), before + delta)
 	var actual := get_amount(key) - before
-	if actual > 0: total_collected += actual
+	if actual > 0:
+		total_collected += actual
+		if inventory != null: inventory.storage[key] = int(inventory.storage.get(key, 0)) + actual
 	return actual
 func spend(cost: Dictionary) -> bool:
 	if not can_afford(cost): return false
@@ -81,9 +90,14 @@ func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dict
 	for key in rewards:
 		var amount := int(rewards[key])
 		if amount <= 0: continue
-		var actual := add(str(key), amount)
-		if actual != amount: return {"ok":false, "reason":"奖励领取失败。", "changed":false, "data":{}}
-		if inventory != null: inventory.backpack[str(key)] = int(inventory.backpack.get(str(key), 0)) + amount
+		var id := str(key)
+		if inventory != null:
+			amounts[id] = int(amounts.get(id, 0)) + amount
+			inventory.backpack[id] = int(inventory.backpack.get(id, 0)) + amount
+			total_collected += amount
+		else:
+			var actual := add(id, amount)
+			if actual != amount: return {"ok":false, "reason":"奖励领取失败。", "changed":false, "data":{}}
 		added[str(key)] = amount
 	return {"ok":true, "reason":"奖励已领取。", "changed":true, "data":added, "added":added}
 func to_dict() -> Dictionary: return {"amounts":amounts.duplicate(true), "capacities":capacities.duplicate(true), "total_collected":total_collected}
