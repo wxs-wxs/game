@@ -40,3 +40,32 @@ Concerns:
 
 - Existing Task 4 gameplay call sites still call `play_music`/`play_ambience` while `GameManager.audio` now points at `AudioService`; a normal headless game launch reports those expected migration errors until Task 4 replaces the call sites with semantic service calls.
 - The focused tests still report the repository's existing ObjectDB/resource-leak warnings at exit.
+
+## Fix Round 1: Legacy API Compatibility
+
+Added migration-window methods to `AudioService` for `play_music`, `play_ambience`, `play_sfx`, and `set_pause_ducked`. These delegate to semantic state/event APIs and the `pause` snapshot; no legacy player pools or gameplay randomness were restored. Smoke now keeps `game.audio` pointed at the Autoload so startup callers exercise the compatibility path.
+
+Exact follow-up outputs:
+
+```text
+godot --headless --editor --quit --path .
+exit code 0; no SCRIPT ERROR or Parse Error
+
+godot --headless --path . --script tests/audio_service_regression.gd
+AUDIO_SERVICE_OK buses=11 events=6 music=exploration_rain layers=3
+
+godot --headless --path . --script tests/audio_save_regression.gd
+AUDIO_SAVE_OK legacy=3 omitted_audio=true persistence=true safe_missing=true
+WARNING: 27 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+ERROR: 11 resources still in use at exit (run with --verbose for details).
+
+godot --headless --path . --script tests/smoke.gd
+SMOKE_OK audio_events=17 indoor=false build_xp=0
+WARNING: 76 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+ERROR: 12 resources still in use at exit (run with --verbose for details).
+
+godot --headless --path . --quit-after 1
+exit code 0; no SCRIPT ERROR or Parse Error
+WARNING: 29 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+ERROR: 12 resources still in use at exit (run with --verbose for details).
+```

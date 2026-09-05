@@ -103,6 +103,76 @@ func emit_event(event_id: String, params: Dictionary = {}) -> String:
 	event_log.append(record)
 	return result
 
+# Migration-window shims for callers that have not moved to semantic audio yet.
+# They delegate to the service state/event APIs and do not create legacy players.
+func play_music(context: String) -> String:
+	var state := world_state.duplicate(true)
+	match context.to_lower():
+		"day", "outdoor":
+			state["phase"] = "exploration"
+			state["location"] = "outdoor"
+		"interior", "indoor":
+			state["location"] = "interior"
+		"night_report", "report":
+			state["phase"] = "night_report"
+		"game_over", "over", "ended":
+			state["phase"] = "game_over"
+		_:
+			state["phase"] = context.to_lower()
+	set_world_state(state)
+	return active_music_id
+
+func play_ambience(context: String) -> String:
+	var state := world_state.duplicate(true)
+	match context.to_lower():
+		"indoor", "inside":
+			state["location"] = "interior"
+			state["weather"] = "clear"
+		"indoor_rain":
+			state["location"] = "interior"
+			state["weather"] = "rain"
+		"rain", "outdoor_rain":
+			state["location"] = "outdoor"
+			state["weather"] = "rain"
+		"outdoor", "clear":
+			state["location"] = "outdoor"
+			state["weather"] = "clear"
+		_:
+			state["location"] = "outdoor"
+	set_world_state(state)
+	return ",".join(active_ambience_layers.keys())
+
+func play_sfx(sound_id: String) -> String:
+	var event_id: String = str({
+		"button_click": "ui.confirm",
+		"resource_shortage": "interaction.blocked",
+		"save_success": "ui.save_complete",
+		"load_success": "ui.load_complete",
+		"footstep_indoor": "player.footstep",
+		"footstep_outdoor": "player.footstep",
+		"interaction_start": "interaction.start",
+		"interaction_failed": "interaction.failed",
+		"interaction_complete": "interaction.complete",
+		"fishing_cast": "fishing.cast",
+		"fishing_catch": "fishing.catch",
+		"build_complete": "build.complete",
+		"build_invalid": "build.invalid",
+		"door_open": "door.open",
+		"door_close": "door.close",
+	}.get(sound_id, sound_id.replace("_", ".")))
+	var params: Dictionary = {}
+	if sound_id == "footstep_indoor":
+		params["indoor"] = true
+	elif sound_id == "footstep_outdoor":
+		params["indoor"] = false
+	return emit_event(str(event_id), params)
+
+func set_pause_ducked(value: bool) -> void:
+	if value:
+		push_snapshot("pause")
+	else:
+		pop_snapshot("pause")
+
 func set_world_state(state: Dictionary) -> void:
 	_initialize()
 	var normalized := DEFAULT_WORLD_STATE.duplicate(true)

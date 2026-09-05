@@ -14,9 +14,6 @@ func _init() -> void:
 		assert(AudioServer.get_bus_index(bus_name) >= 0, "missing audio bus: %s" % bus_name)
 	var game := GameManager.new()
 	game.audio = audio
-	# The remaining gameplay call sites are migrated in Task 4. Keep this smoke
-	# focused on gameplay behavior while the compatibility pointer is available.
-	game.audio = null
 	assert(game.survivors.size() == 1)
 	assert(game.get_protagonist().display_name == "阿禾")
 	game.start_exploration()
