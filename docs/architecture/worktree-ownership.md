@@ -29,3 +29,17 @@ worktree 按垂直功能切片登记，而不是按单一目录硬隔离。一�
 ```
 
 集成 worktree 负责合并前置基础提交，并复核所有 ownership 记录和共享入口冲突。
+
+## Foundation Merge Point
+
+本基础序列可作为后续模块化 worktree 的合并起点：
+
+- 基线：`20720654fe3b61e8a80241d30205d5a91901193f` (`docs: record modular refactor baseline`)
+- 契约：`79b8589626bc046a0157c4eca8362f5ddf4d6fe3` (`refactor: add modular result and snapshot contracts`)
+- checker：`6ce88fef9609678914b15178e4d05989083af913`，后续 checker 修复为 `01d29ec879747e52f7d575173e3428b263e845ca` 和 `28b306372e3c8cbd1ec32aaa70856aae684d1cc2`
+
+准确的架构边界检查命令：
+
+```powershell
+.\tools\check_architecture.ps1 -Root .
+```
