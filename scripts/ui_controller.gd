@@ -113,8 +113,10 @@ var _event_open := false
 var _report_open := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
+const UiFactory := preload("res://scripts/presentation/theme/ui_factory.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
 const StorageTransferSlotClass := preload("res://scripts/storage_transfer_slot.gd")
+var _ui_factory: UiFactory
 
 # All values below are authored directly in the 960x540 logical viewport.
 const VIEW_SIZE := Vector2(960, 540)
@@ -161,6 +163,8 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	message_until = 0.0
 	_last_prompt = ""
 	_clear_hud()
+	if _ui_factory == null:
+		_ui_factory = UiFactory.new()
 	_configure_pixel_font()
 	hud = Control.new()
 	hud.name = "HUDRoot"
@@ -191,14 +195,8 @@ func _configure_pixel_font() -> void:
 	# Use one imported Fusion Pixel face at a fixed size. Controls stay on the
 	# logical pixel grid, so no secondary text scale or fractional transform is
 	# needed for crisp CJK, Latin, and numeric labels.
-	_pixel_theme = PixelTheme.create_theme()
-	_pixel_theme.default_font = FONT_FUSION
-	_pixel_theme.default_font_size = PixelTheme.FONT_SIZE_BODY
-	var fusion_font := FONT_FUSION as FontFile
-	if fusion_font != null:
-		fusion_font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-		fusion_font.hinting = TextServer.HINTING_NONE
-		fusion_font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	_ui_factory.setup(null)
+	_pixel_theme = _ui_factory.theme
 
 func _clear_hud() -> void:
 	if is_instance_valid(hud):
@@ -1910,102 +1908,30 @@ func _compact_cost_text(cost: Dictionary) -> String:
 	return " ".join(parts)
 
 func _progress_bar(pos: Vector2, dimensions: Vector2, parent: Control, fill_color: Color = Color("70a9a0")) -> ProgressBar:
-	var bar := ProgressBar.new()
-	bar.position = pos
-	bar.size = dimensions
-	bar.custom_minimum_size = Vector2.ZERO
-	bar.min_value = 0.0
-	bar.max_value = 100.0
-	bar.value = 0.0
-	bar.show_percentage = false
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var background := _bar_style(Color("101b1d", 0.94), PixelTheme.BAR_TEXTURE)
-	var fill := _bar_style(Color.WHITE, PixelTheme.meter_texture(fill_color))
-	bar.add_theme_stylebox_override("background", background)
-	bar.add_theme_stylebox_override("fill", fill)
-	parent.add_child(bar)
-	return bar
+	return _ui_factory.progress_bar(parent, pos, dimensions, fill_color)
 
 func _set_progress_fill(bar: ProgressBar, color: Color) -> void:
-	var fill := _bar_style(Color.WHITE, PixelTheme.meter_texture(color))
-	bar.add_theme_stylebox_override("fill", fill)
+	_ui_factory.set_progress_fill(bar, color)
 
 func _bar_style(tint: Color, texture: Texture2D) -> StyleBoxTexture:
-	return PixelTheme.bar_style(tint, texture)
+	return _ui_factory.bar_style(tint, texture)
 
 func _icon(pos: Vector2, dimensions: Vector2, texture: Texture2D, parent: Control = null) -> TextureRect:
-	var icon := TextureRect.new()
-	icon.position = pos
-	icon.size = dimensions
-	icon.scale = Vector2.ONE
-	icon.texture = texture
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var target_parent: Control = parent if parent != null else hud
-	if target_parent != null:
-		target_parent.add_child(icon)
-	return icon
+	return _ui_factory.icon(target_parent, pos, dimensions, texture)
 
 func _add_button_icon(button: Button, texture: Texture2D) -> TextureRect:
-	# Icons stay at an integer 16px destination inside every button.
-	var icon_size := 16
-	var icon := TextureRect.new()
-	icon.position = Vector2(floor((button.size.x - icon_size) * 0.5), 6)
-	icon.size = Vector2(icon_size, icon_size)
-	icon.texture = texture
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button.add_child(icon)
-	return icon
+	return _ui_factory.add_button_icon(button, texture)
 
 func _label(pos: Vector2, dimensions: Vector2, text: String, font_size: int, color: Color, parent: Control = null) -> Label:
-	var label := Label.new()
-	label.position = pos
-	label.size = dimensions
-	label.scale = Vector2.ONE
-	label.text = text
-	var resolved_font_size := PixelTheme.FONT_SIZE_BODY
-	if font_size >= 9:
-		resolved_font_size = PixelTheme.FONT_SIZE_TITLE
-	elif font_size <= 3:
-		resolved_font_size = PixelTheme.FONT_SIZE_SMALL
-	label.add_theme_font_size_override("font_size", resolved_font_size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color("081516", 0.86))
-	label.add_theme_constant_override("outline_size", 2)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var target_parent: Control = parent if parent != null else hud
-	if target_parent != null:
-		target_parent.add_child(label)
-	return label
+	return _ui_factory.label(target_parent, pos, dimensions, text, font_size, color)
 
 func _label_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String, font_size: int, color: Color) -> Label:
 	return _label(pos, dimensions, text, font_size, color, parent)
 
 func _button(pos: Vector2, dimensions: Vector2, text: String, parent: Control) -> Button:
-	var button := Button.new()
-	button.position = pos
-	button.size = dimensions
-	button.scale = Vector2.ONE
-	button.text = text
-	button.add_theme_font_size_override("font_size", PixelTheme.FONT_SIZE_BODY)
-	button.add_theme_color_override("font_color", TEXT_MAIN)
-	button.add_theme_color_override("font_hover_color", Color.WHITE)
-	button.add_theme_color_override("font_disabled_color", Color("687a76"))
-	button.add_theme_color_override("font_outline_color", Color("081516", 0.92))
-	button.add_theme_constant_override("outline_size", 2)
-	button.add_theme_stylebox_override("normal", _button_style(Color("1c3032"), UI_PANEL_TEXTURE))
-	button.add_theme_stylebox_override("hover", _button_style(Color("2c4a49"), UI_PANEL_LIGHT_TEXTURE))
-	button.add_theme_stylebox_override("pressed", _button_style(Color("152527"), UI_PANEL_PRESSED_TEXTURE))
-	button.add_theme_stylebox_override("disabled", _button_style(Color("182325", 0.8), UI_DISABLED_TEXTURE))
-	button.add_theme_stylebox_override("focus", _button_style(Color("3a534d"), UI_PANEL_LIGHT_TEXTURE))
-	button.focus_mode = Control.FOCUS_ALL
-	parent.add_child(button)
-	return button
+	return _ui_factory.button(parent, pos, dimensions, text)
 
 func _button_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String) -> Button:
 	var button := _button(pos, dimensions, text, parent)
@@ -2013,16 +1939,8 @@ func _button_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String
 	return button
 
 func _button_style(tint: Color, texture: Texture2D = UI_PANEL_TEXTURE) -> StyleBoxTexture:
-	return PixelTheme.button_style(tint, texture)
+	return _ui_factory.button_style(tint, texture)
 
 func _panel(pos: Vector2, dimensions: Vector2, color: Color, parent: Control = null) -> Panel:
-	var panel := Panel.new()
-	panel.position = pos
-	panel.size = dimensions
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var texture := UI_PANEL_LIGHT_TEXTURE if color == PANEL_LIGHT else UI_PANEL_TEXTURE
-	var style := PixelTheme.panel_style(color, texture)
-	panel.add_theme_stylebox_override("panel", style)
-	(parent if parent != null else hud).add_child(panel)
-	return panel
-
+	var target_parent: Control = parent if parent != null else hud
+	return _ui_factory.panel(target_parent, pos, dimensions, color)
