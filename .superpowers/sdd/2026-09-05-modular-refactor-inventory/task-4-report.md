@@ -107,3 +107,31 @@ Parser、库存 facade/domain 回归、资源链、库存动作、仓库存取�
 ## 修复后结论
 
 checker 修复后，Task 4 inventory gate 全部通过。报告历史部分保留第一轮 13 条误报失败记录，以上复验结果为当前结论。
+
+## Reviewer fix round 1/5
+
+审查指出 checker 以变量名 `inventory` 整体豁免，可能放行注入的 `InventoryState` 外部字典写入。已将豁免收窄为仅允许明确的 `self` 字段写入，并新增正反向 fixture 回归：
+
+```powershell
+& .\tests\architecture\check_architecture_regression.ps1
+```
+
+退出码：`0`；关键输出：`ARCHITECTURE_CHECK_REGRESSION_OK`。fixture 验证 `self.amounts[...]` 通过，同时验证注入对象 `inventory.storage[...]` 被拒绝。
+
+修复后重新运行：
+
+- Godot editor parser：退出码 `0`。
+- `inventory_domain_regression.gd`：退出码 `0`，`INVENTORY_DOMAIN_REGRESSION_OK`。
+- `resource_manager_facade_regression.gd`：退出码 `0`，`RESOURCE_MANAGER_FACADE_REGRESSION_OK`。
+- `resource_chain_smoke.gd`：退出码 `0`，`RESOURCE_CHAIN_SMOKE_OK stone=6 wood=4 axe=true pickaxe=true`。
+- `inventory_action_regression.gd`：退出码 `0`，`INVENTORY_ACTION_REGRESSION_OK carry=3/12 action=pickup`。
+- `storage_drag_regression.gd`：退出码 `0`，`STORAGE_DRAG_REGRESSION_OK slots=12/12 transfer=wood`。
+- `git diff --check`：退出码 `0`，无 whitespace error（仅已有 LF/CRLF 转换提示）。
+
+项目级架构检查命令：
+
+```powershell
+& .\tools\check_architecture.ps1 -Root .
+```
+
+退出码：`1`，输出 5 条真实违规，全部在 `scripts/domain/inventory/resource_ledger.gd` 的 `inventory.storage[...]` 和 `inventory.backpack[...]` 写入（行 36、40、47、83、96）。这是收窄规则后暴露的运行时跨模块内部字典写入；本轮按要求未修改运行时玩法，故该项是后续 concern，不将其描述为通过。
