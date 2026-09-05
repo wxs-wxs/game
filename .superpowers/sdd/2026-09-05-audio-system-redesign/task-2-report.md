@@ -97,3 +97,36 @@ The focused test completed without the previous invalid-playback errors or
 resource-leak warnings. The non-headless controller checks are safely forced
 through configuration paths in the headless test; audible output still needs
 the later runtime acceptance pass.
+
+## Scoped Re-review Fixes
+
+Fix commit: `7931022` (`fix: tighten audio pool priority and reactivation`)
+
+- Oldest stealing now requires a strictly lower-priority same-group candidate,
+  matching the lowest-priority policy and preventing equal or higher priority
+  sounds from being displaced.
+- Spatial player reuse now resets the logical max distance on every cue. Godot
+  rejects a literal zero `AudioStreamPlayer2D.max_distance`, so the controller
+  stores the requested zero in `audio_max_distance` metadata and uses a far
+  bound (`1000000`) as the engine-level unlimited value.
+- Ambience layers track active fade Tweens. Re-adding a layer cancels its old
+  fade-out, starts a fresh fade-in, and guards the old stop callback so it
+  cannot stop the reactivated player.
+- `AudioListener2D.make_current()` is also called from controller `_ready`,
+  after the node enters the scene tree.
+- Regression coverage now checks equal-priority oldest rejection, listener
+  current state when safely available, logical max-distance reset, and rapid
+  ambience remove/re-add state.
+
+Scoped re-review verification:
+
+```text
+AUDIO_SERVICE_OK buses=11 events=5 music=exploration_rain layers=3
+EXIT=0
+EDITOR_EXIT=0
+AUDIO_CATALOG_OK cues=48 validation_errors=0
+CATALOG_EXIT=0
+```
+
+The service test completed without playback errors, resource-leak warnings, or
+assertion failures.
