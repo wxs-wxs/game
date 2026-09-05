@@ -11,7 +11,7 @@ const PHASE_DAY := "day"
 const PHASE_EVENT := "event"
 const PHASE_REPORT := "report"
 const PHASE_ENDED := "ended"
-const SAVE_VERSION := 8
+const SAVE_VERSION := 9
 
 const NORMAL_BODY_TEMPERATURE_C := 37.0
 const BODY_TEMPERATURE_DAMAGE_THRESHOLD_C := 35.0
@@ -60,7 +60,6 @@ var daily_log: Array[String] = []
 var report_lines: Array[String] = []
 var key_choices: Array[String] = []
 var no_food_days: int = 0
-var safety: int = 50
 var won: bool = false
 var end_reason: String = ""
 var exploration_mode: bool = true
@@ -91,7 +90,7 @@ func new_game(seed_value: int = 14072026) -> void:
 	blueprints.unlock("storage_shelf")
 	blueprints.unlock("workbench")
 	resources.set_workbench_available(false)
-	day = 1; phase = PHASE_MORNING; weather = "晴朗"; environment_temperature = 16.0; no_food_days = 0; safety = 50; exploration_mode = true
+	day = 1; phase = PHASE_MORNING; weather = "晴朗"; environment_temperature = 16.0; no_food_days = 0; exploration_mode = true
 	day_return_required = false; night_settlement_applied = false; night_context = {}
 	in_house = false; house_id = "starter_hut"; house_level = 0; house_fire_lit = false; outdoor_position = Vector2(180, 155); built_facilities = []
 	torch_bonus_pending = false; deployed_traps = 0
@@ -153,7 +152,6 @@ func _resolve_night() -> Dictionary:
 		"day": day,
 		"weather": weather,
 		"resource_before": resources.to_dict(),
-		"threat_before": survival.threat,
 		"temperature_before": environment_temperature,
 		"completed_buildings": _canonical_built_ids()
 	}
@@ -598,7 +596,7 @@ func to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
-	return {"version":SAVE_VERSION,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"night_context":night_context.duplicate(true),"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+	return {"version":SAVE_VERSION,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"night_context":night_context.duplicate(true),"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
 
 func from_dict(data: Dictionary) -> void:
 	var raw_version := int(data.get("version", 0))
@@ -651,7 +649,7 @@ func from_dict(data: Dictionary) -> void:
 	for line in data.get("report_lines", []): report_lines.append(str(line))
 	key_choices = []
 	for line in data.get("key_choices", []): key_choices.append(str(line))
-	no_food_days = int(data.get("no_food_days", 0)); safety = int(data.get("safety", 50)); won = bool(data.get("won", false)); end_reason = str(data.get("end_reason", ""))
+	no_food_days = int(data.get("no_food_days", 0)); won = bool(data.get("won", false)); end_reason = str(data.get("end_reason", ""))
 	house_id = str(data.get("house_id", "starter_hut")); house_level = int(data.get("house_level", 0)); built_facilities = []
 	if migrate_legacy_house_fire:
 		var legacy_fire: Dictionary = fire_states["house_fireplace"]

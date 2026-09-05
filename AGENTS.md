@@ -1,5 +1,14 @@
 # Project Instructions
 
+## Communication Style
+
+- When talking with the user, avoid unnecessarily technical or specialized
+  language. Prefer clear, everyday Chinese that is easy to understand.
+- When a technical term is needed for accuracy, briefly explain what it means
+  in plain language the first time it appears.
+- Keep exact commands, file paths, code names, and error messages unchanged
+  when changing them would make the answer inaccurate.
+
 ## Asset Sourcing
 
 - When the project needs new assets, first search the [Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack) and reuse a suitable asset from it whenever possible.

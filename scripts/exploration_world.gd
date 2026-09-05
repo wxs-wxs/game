@@ -31,7 +31,6 @@ const NINJA_CRATE := preload("res://assets/art/ninja_adventure/Items/Object/Crat
 const NINJA_GRASS := preload("res://assets/art/ninja_adventure/Items/Resource/Grass.png")
 const NINJA_ROCK := preload("res://assets/art/ninja_adventure/Items/Resource/Rock.png")
 const NINJA_BRANCH := preload("res://assets/art/ninja_adventure/Items/Resource/Branch.png")
-const NINJA_FIRE_SHEET := "res://assets/art/ninja_adventure/FX/Particle/Fire.png"
 const NINJA_FLAG_SHEET := "res://assets/art/ninja_adventure/Backgrounds/Animated/Flag/FlagBrown16x16.png"
 # The camp shelter is drawn with its doorway centered at (158, 124).  Keep the
 # interaction point on that artwork instead of placing a second marker at the
@@ -43,14 +42,14 @@ const HOUSE_DOOR_OUTSIDE_POSITION := Vector2(158, 145)
 const RUIN_TEXTURE_REGION := Rect2(0, 0, 64, 48)
 const HARVESTABLE_TREE_POSITIONS := [
 	Vector2(81, 291), Vector2(146, 341), Vector2(256, 281), Vector2(341, 351),
-	Vector2(1390, 238), Vector2(1490, 180), Vector2(1470, 871), Vector2(1470, 920)
+	Vector2(1390, 238), Vector2(1490, 180), Vector2(1470, 871), Vector2(1420, 940)
 ]
 const GROVE_TREE_POSITIONS := [
-	Vector2(48, 254), Vector2(110, 246), Vector2(192, 254), Vector2(278, 246),
+	Vector2(24, 234), Vector2(118, 230), Vector2(192, 254), Vector2(308, 228),
 	Vector2(60, 386), Vector2(116, 428), Vector2(210, 406), Vector2(286, 438),
-	Vector2(955, 344), Vector2(1012, 332), Vector2(1138, 350), Vector2(1190, 392),
-	Vector2(1340, 186), Vector2(1430, 152), Vector2(1450, 306), Vector2(1470, 330),
-	Vector2(1350, 834), Vector2(1415, 902), Vector2(1490, 878)
+	Vector2(955, 344), Vector2(1030, 320), Vector2(1138, 350), Vector2(1205, 410),
+	Vector2(1340, 186), Vector2(1425, 120), Vector2(1390, 330), Vector2(1470, 330),
+	Vector2(1350, 834), Vector2(1348, 930), Vector2(1485, 790)
 ]
 # The old water block was a closed 370x264 rectangle, which read as a pond and
 # also created several invisible wall strips around it.  This is now a coastal
@@ -86,6 +85,11 @@ var zone_labels := [
 	{"name":"东侧高地", "position":Vector2(1400, 250), "color":Color("c1cb88")},
 	{"name":"南部湿地", "position":Vector2(1180, 900), "color":Color("a0c29a")}
 ]
+
+func _init() -> void:
+	# Interaction props share one depth layer so their screen-space Y controls
+	# overlap: objects farther down the map are closer to the camera.
+	y_sort_enabled = true
 
 func setup(manager: GameManager) -> void:
 	game = manager
@@ -233,6 +237,15 @@ func _build_points() -> void:
 	# the same trunks used by the map art.
 	for position in HARVESTABLE_TREE_POSITIONS:
 		_add_point(TreeSpot.new(), position)
+	var tree_variants: Array[Texture2D] = [
+		Assets.region(NATURE_ATLAS, Rect2(0, 0, 32, 32)),
+		Assets.region(NATURE_ATLAS, Rect2(32, 0, 32, 32)),
+		Assets.region(NATURE_ATLAS, Rect2(96, 0, 32, 32))
+	]
+	for index in range(GROVE_TREE_POSITIONS.size()):
+		var small_tree := TreeSpot.new()
+		small_tree.configure_small_tree(tree_variants[index % tree_variants.size()], Vector2(1.28 + float(index % 3) * 0.10, 1.28 + float(index % 3) * 0.10))
+		_add_point(small_tree, GROVE_TREE_POSITIONS[index])
 	_add_point(RuinSpot.new(), Vector2(1040, 515))
 
 func _add_point(point: InteractionPoint, at: Vector2) -> void:
@@ -464,6 +477,8 @@ func _build_collisions() -> void:
 	for rect in [Rect2(350, 145, 28, 28), Rect2(430, 230, 32, 24), Rect2(280, 410, 30, 26), Rect2(435, 535, 30, 30), Rect2(810, 490, 32, 24), Rect2(870, 590, 26, 28), Rect2(1328, 388, 30, 30), Rect2(1465, 550, 30, 30), Rect2(1495, 732, 30, 30), Rect2(1465, 916, 30, 30)]: _add_wall(rect, "RockPile")
 	for position in HARVESTABLE_TREE_POSITIONS:
 		_add_wall(Rect2(position - Vector2(11, 21), Vector2(22, 42)), "Tree")
+	for position in GROVE_TREE_POSITIONS:
+		_add_wall(Rect2(position - Vector2(8, 14), Vector2(16, 28)), "SmallTree")
 
 func _add_wall(rect: Rect2, kind: String = "Landmark") -> void:
 	var body := StaticBody2D.new()
@@ -498,20 +513,8 @@ func _build_art_sprites() -> void:
 	# Every landmark below comes directly from Ninja Adventure PNGs. Collision
 	# rectangles and interaction coordinates remain authored gameplay data.
 	var tree_texture: Texture2D = Assets.region(NATURE_ATLAS, Rect2(0, 0, 32, 32))
-	for at in [Vector2(1020, 191), Vector2(1110, 271), Vector2(1390, 239), Vector2(1490, 181), Vector2(1470, 871), Vector2(1470, 921)]:
+	for at in [Vector2(1020, 191), Vector2(1110, 271)]:
 		_add_world_sprite(tree_texture, at + Vector2(0, -4), Vector2(1.5, 1.5), 1)
-	# The reference map composes small groves from several authored tree shapes.
-	# These dressing trees have no interaction or collision; the harvestable trees
-	# remain the separate TreeSpot nodes created above.
-	var tree_variants: Array[Texture2D] = [
-		tree_texture,
-		Assets.region(NATURE_ATLAS, Rect2(32, 0, 32, 32)),
-		Assets.region(NATURE_ATLAS, Rect2(96, 0, 32, 32))
-	]
-	for index in range(GROVE_TREE_POSITIONS.size()):
-		var at: Vector2 = GROVE_TREE_POSITIONS[index]
-		var grove_tree := _add_world_sprite(tree_variants[index % tree_variants.size()], at + Vector2(0, -4), Vector2(1.28 + float(index % 3) * 0.10, 1.28 + float(index % 3) * 0.10), 1)
-		grove_tree.modulate = Color(0.92, 0.98, 0.84, 1.0) if index % 4 else Color(0.84, 0.92, 0.78, 1.0)
 	var ripple_texture: Texture2D = Assets.region(WATER_RIPPLE_SHEET, Rect2(0, 0, 16, 16))
 	for at in [Vector2(1630, 84), Vector2(1740, 140), Vector2(1840, 96), Vector2(1680, 224), Vector2(1810, 252), Vector2(1605, 480), Vector2(1780, 760)]:
 		_add_world_sprite(ripple_texture, at, Vector2.ONE, 1)
@@ -534,8 +537,8 @@ func _build_art_sprites() -> void:
 	chimney.z_index = 4
 	add_child(chimney)
 	chimney.setup(game)
-	# A small flame, crate and flag use the pack's own object/FX sheets.
-	_add_world_sprite(Assets.region(NINJA_FIRE_SHEET, Rect2(0, 0, 16, 12)), Vector2(210, 148), Vector2(2, 2), 2)
+	# The campfire point owns its lit-state animation; keep only the nearby crate
+	# and flag as static props so an unlit camp does not show a false flame.
 	_add_world_sprite(NINJA_CRATE, Vector2(224, 148), Vector2(2, 2), 2)
 	_add_world_sprite(Assets.region(NINJA_FLAG_SHEET, Rect2(0, 0, 16, 16)), Vector2(222, 82), Vector2.ONE, 2)
 	# A complete 96x32 dock from the water tileset sits on the curved bank.

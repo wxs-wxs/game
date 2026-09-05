@@ -6,6 +6,11 @@ var display_name: String
 var role: String
 var color: Color
 var health: int = 100
+## Core body temperature in degrees Celsius. A healthy resting body targets
+## roughly 37 C; the value is persisted so loading a cold-weather save keeps
+## the survival pressure intact.
+var body_temperature: float = 37.0
+var temperature_damage_accumulator: float = 0.0
 var hunger: int = 80
 var energy: int = 80
 var morale: int = 70
@@ -71,11 +76,12 @@ func status_text() -> String:
 	return "/".join(tags) if not tags.is_empty() else "正常"
 
 func to_dict() -> Dictionary:
-	return {"id":id,"name":display_name,"role":role,"color":color.to_html(false),"health":health,"hunger":hunger,"energy":energy,"morale":morale,"gather":gather,"build":build,"medical":medical,"current_work":current_work,"injured":injured,"sick":sick,"alive":alive,"xp":xp,"same_work_days":same_work_days,"last_work":last_work,"relations":relations}
+	return {"id":id,"name":display_name,"role":role,"color":color.to_html(false),"health":health,"body_temperature":body_temperature,"temperature_damage_accumulator":temperature_damage_accumulator,"hunger":hunger,"energy":energy,"morale":morale,"gather":gather,"build":build,"medical":medical,"current_work":current_work,"injured":injured,"sick":sick,"alive":alive,"xp":xp,"same_work_days":same_work_days,"last_work":last_work,"relations":relations}
 
 static func from_dict(data: Dictionary) -> Survivor:
 	var unit := Survivor.create_profile(data)
-	unit.health = int(data.get("health", 100)); unit.hunger = int(data.get("hunger", 80))
+	unit.health = int(data.get("health", 100)); unit.body_temperature = clampf(float(data.get("body_temperature", 37.0)), -50.0, 45.0)
+	unit.temperature_damage_accumulator = maxf(0.0, float(data.get("temperature_damage_accumulator", 0.0))); unit.hunger = int(data.get("hunger", 80))
 	unit.energy = int(data.get("energy", 80)); unit.morale = int(data.get("morale", 70))
 	unit.current_work = str(data.get("current_work", "休息")); unit.injured = bool(data.get("injured", false))
 	unit.sick = bool(data.get("sick", false)); unit.alive = bool(data.get("alive", true))

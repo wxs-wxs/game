@@ -10,19 +10,17 @@ func _init() -> void:
 	assert(ui.hud.scale == Vector2.ONE)
 	assert(ui.VIEW_SIZE == Vector2(960, 540))
 	assert(ui.hud.get_node("StatusRail") != null)
-	assert(ui.hud.get_node("ThreatChip") != null)
+	assert(ui.hud.get_node_or_null("ThreatChip") == null)
 	assert(ui.hud.get_node("TemperatureChip") != null)
 	assert(ui.hud.get_node("ResourceChip") != null)
 	assert(ui.hud.get_node("StatusRail").size == Vector2(210, 30))
-	assert(ui.hud.get_node("ThreatChip").size == Vector2(150, 30))
-	assert(ui.hud.get_node("ResourceChip").size == Vector2(318, 42))
-	assert(ui.threat_progress_bar == null)
+	assert(ui.hud.get_node("ResourceChip").position == Vector2(702, 12))
+	assert(ui.hud.get_node("ResourceChip").size == Vector2(246, 42))
 	assert(ui.day_label.get_parent() == ui.hud.get_node("StatusRail"))
 	assert(ui.clock_label.get_parent() == ui.hud.get_node("StatusRail"))
 	assert(ui.weather_label.get_parent() == ui.hud.get_node("StatusRail"))
-	assert(ui.threat_label.get_parent() == ui.hud.get_node("ThreatChip"))
 	assert(ui.temperature_label.get_parent() == ui.hud.get_node("TemperatureChip"))
-	for control in [ui.day_label, ui.clock_icon_label, ui.clock_label, ui.weather_icon_label, ui.weather_label, ui.temperature_label, ui.threat_label]:
+	for control in [ui.day_label, ui.clock_icon_label, ui.clock_label, ui.weather_icon_label, ui.weather_label, ui.temperature_label]:
 		_assert_inside_parent(control)
 	for control in ui._resource_icons + ui._resource_badges:
 		assert(control.get_parent() == ui.hud.get_node("ResourceChip"))

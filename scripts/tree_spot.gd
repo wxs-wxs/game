@@ -5,7 +5,9 @@ const Assets = preload("res://scripts/ninja_adventure_assets.gd")
 const NATURE_ATLAS := "res://assets/art/ninja_adventure/Backgrounds/Tilesets/TilesetNature.png"
 var tree_art: Texture2D
 var stump_art: Texture2D
+var stump_scale := Vector2(2, 2)
 var is_stump := false
+var is_small_tree := false
 var regrow_remaining := 0.0
 const REGROW_DELAY := 45.0
 
@@ -29,6 +31,16 @@ func _init() -> void:
 	art_scale = Vector2(2, 2)
 	art_offset = Vector2(0, -3)
 
+func configure_small_tree(texture: Texture2D, scale_value: Vector2) -> void:
+	is_small_tree = true
+	tree_art = texture
+	display_name = "砍伐小树"
+	reward = {"wood": 2}
+	art_texture = tree_art
+	art_scale = scale_value
+	stump_scale = scale_value
+	art_offset = Vector2(0, -4)
+
 func _process(delta: float) -> void:
 	super._process(delta)
 	if is_stump and (game == null or not game.time.paused):
@@ -36,7 +48,7 @@ func _process(delta: float) -> void:
 		if regrow_remaining <= 0.0:
 			is_stump = false
 			cooldown_remaining = 0.0
-			set_art(tree_art, Vector2(2, 2), Vector2(0, -3))
+			set_art(tree_art, art_scale, art_offset)
 			queue_redraw()
 
 func perform_interaction() -> Dictionary:
@@ -44,14 +56,16 @@ func perform_interaction() -> Dictionary:
 		return {"ok":true, "message":failure_text, "failed":true}
 	is_stump = true
 	regrow_remaining = REGROW_DELAY
-	set_art(stump_art, Vector2(2, 2), Vector2(0, 4))
-	return {"ok":true, "message":"砍下木材 +4，树木变成树桩；约 %d 秒后重新长成大树。" % int(REGROW_DELAY), "stump":true}
+	set_art(stump_art, stump_scale, Vector2(0, 4))
+	var amount := int(reward.get("wood", 0))
+	var kind := "小树" if is_small_tree else "树木"
+	return {"ok":true, "message":"砍下木材 +%d，%s变成树桩；约 %d 秒后重新长成。" % [amount, kind, int(REGROW_DELAY)], "stump":true}
 
 func refresh_tree_art() -> void:
 	if is_stump:
-		set_art(stump_art, Vector2(2, 2), Vector2(0, 4))
+		set_art(stump_art, stump_scale, Vector2(0, 4))
 	else:
-		set_art(tree_art, Vector2(2, 2), Vector2(0, -3))
+		set_art(tree_art, art_scale, art_offset)
 
 func _draw() -> void:
 	if art_sprite != null:

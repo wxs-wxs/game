@@ -27,9 +27,6 @@ var clock_label: Label
 var weather_icon_label: Label
 var weather_label: Label
 var temperature_label: Label
-var threat_label: Label
-var threat_icon_label: Label
-var threat_progress_bar: ProgressBar
 var interaction_detail_label: Label
 var save_button: Button
 var load_button: Button
@@ -130,10 +127,9 @@ const ICON_CHEST := preload("res://assets/art/ninja_adventure/Items/Treasure/Big
 const RESOURCE_ICON_TINTS := [Color("f2ca72"), Color("9dc77c"), Color("e58b6a"), Color("b6c6b5"), Color("7eb8b8"), Color("d8bb77"), Color("f2ca72")]
 const TOP_LEFT_CHIP_POSITION := Vector2(12, 12)
 const TOP_LEFT_CHIP_SIZE := Vector2(210, 30)
-const THREAT_CHIP_POSITION := Vector2(405, 12)
-const THREAT_CHIP_SIZE := Vector2(150, 30)
-const RESOURCE_CHIP_POSITION := Vector2(630, 12)
-const RESOURCE_CHIP_SIZE := Vector2(318, 42)
+const RESOURCE_CHIP_POSITION := Vector2(702, 12)
+const RESOURCE_CHIP_SIZE := Vector2(246, 42)
+const RESOURCE_KEYS := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal"]
 
 func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	game = manager
@@ -202,7 +198,6 @@ func _clear_hud() -> void:
 	pause_panel = null
 	exit_button = null
 	feedback_panel = null
-	threat_progress_bar = null
 	survivor_panel = null
 	survivor_name_label = null
 	survivor_status_label = null
@@ -241,7 +236,6 @@ func _clear_hud() -> void:
 	clock_icon_label = null
 	weather_icon_label = null
 	temperature_label = null
-	threat_icon_label = null
 	survivor_avatar_sprite = null
 	shortcut_button = null
 	shortcut_panel = null
@@ -321,14 +315,6 @@ func _build_hud() -> void:
 	weather_icon_label = _label_in(day_chip, Vector2(153, 6), Vector2(30, 18), "天气", 3, TEXT_MUTED)
 	weather_label = _label_in(day_chip, Vector2(186, 6), Vector2(24, 18), "", 3, PixelTheme.TEXT_WATER)
 
-	var threat_chip := _panel(THREAT_CHIP_POSITION, THREAT_CHIP_SIZE, PANEL_DARK, hud)
-	threat_chip.name = "ThreatChip"
-	threat_chip.clip_contents = true
-	threat_icon_label = null
-	threat_progress_bar = null
-	threat_label = _label_in(threat_chip, Vector2(6, 6), Vector2(138, 18), "", 3, TEXT_WARN)
-	threat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-
 	var temperature_chip := _panel(Vector2(240, 12), Vector2(150, 30), PANEL_DARK, hud)
 	temperature_chip.name = "TemperatureChip"
 	temperature_chip.clip_contents = true
@@ -338,17 +324,18 @@ func _build_hud() -> void:
 	var resource_chip := _panel(RESOURCE_CHIP_POSITION, RESOURCE_CHIP_SIZE, PANEL_DARK, hud)
 	resource_chip.name = "ResourceChip"
 	resource_chip.clip_contents = true
-	var resource_keys := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal"]
-	for index in range(resource_keys.size()):
+	for index in range(RESOURCE_KEYS.size()):
 		var slot_x := 15 + index * 32
 		var badge := _label_in(resource_chip, Vector2(slot_x, 17), Vector2(32, 23), "", 3, RESOURCE_ICON_TINTS[index])
 		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.mouse_filter = Control.MOUSE_FILTER_STOP
 		badge.name = "ResourceBadge%d" % index
 		_resource_badges.append(badge)
-		var icon_texture: Texture2D = _item_icon_texture(resource_keys[index])
+		var icon_texture: Texture2D = _item_icon_texture(RESOURCE_KEYS[index])
 		var icon := _icon(Vector2(slot_x + 8, 1), Vector2(16, 16), icon_texture, resource_chip)
 		icon.name = "ResourceIcon%d" % index
 		icon.modulate = Color.WHITE
+		icon.mouse_filter = Control.MOUSE_FILTER_STOP
 		_resource_icons.append(icon)
 
 	# A small question-mark chip is always available without taking space from
@@ -970,15 +957,16 @@ func refresh() -> void:
 	var current_time := Time.get_ticks_msec() / 1000.0
 
 	if resources != null:
-		var badge_keys := ["food", "wood", "medicine", "stone", "fiber", "cloth", "metal"]
-		for index in range(mini(_resource_badges.size(), badge_keys.size())):
+		for index in range(mini(_resource_badges.size(), RESOURCE_KEYS.size())):
 			var badge: Label = _resource_badges[index]
-			var key := str(badge_keys[index])
+			var key := str(RESOURCE_KEYS[index])
 			var amount := _resource_amount(resources, key)
 			# The capacity stays in the tooltip; a single compact quantity keeps
 			# every 16px icon slot readable at the native HUD scale.
 			badge.text = str(amount)
-			badge.tooltip_text = "%s：%d / %d" % [resources.display_name(key), _resource_amount(resources, key), _resource_capacity(resources, key)]
+			var tooltip := "%s：%d / %d" % [resources.display_name(key), amount, _resource_capacity(resources, key)]
+			badge.tooltip_text = tooltip
+			_resource_icons[index].tooltip_text = tooltip
 	if day_label != null:
 		day_label.text = "第%d天" % int(game.day)
 	if clock_label != null:
@@ -989,12 +977,6 @@ func refresh() -> void:
 		var temperature_status: Dictionary = game.get_temperature_status() if game.has_method("get_temperature_status") else {}
 		temperature_label.text = "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))]
 		temperature_label.tooltip_text = "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0))
-	if threat_label != null:
-		threat_label.text = _threat_text()
-	if threat_progress_bar != null:
-		var threat_status: Dictionary = game.get_survival_status()
-		threat_progress_bar.value = int(threat_status.get("threat", 0))
-
 	if hero != null:
 		var health := _stat_value(hero, "health")
 		var hunger := _stat_value(hero, "hunger")
@@ -1626,16 +1608,6 @@ func _weather_text(weather: String) -> String:
 		"寒冷": "冷"
 	}.get(weather, weather))
 	return marker
-
-func _threat_text() -> String:
-	if game != null:
-		var status: Dictionary = game.get_survival_status()
-		var label := str(status.get("threat_label", ""))
-		if not label.is_empty():
-			return "威胁·" + label
-		var safety := clampi(int(status.get("safety", game.safety)), 0, 100)
-		return "威胁 %d" % (100 - safety)
-	return "威胁 --"
 
 func _director_goal_text() -> String:
 	if game == null:

@@ -15,7 +15,6 @@ func event_weight(event_id: String, context: Dictionary) -> int:
 	var weight := int(definition.get("base_weight", 10))
 	var weather_bonus: Dictionary = definition.get("weather_bonus", {})
 	weight += int(weather_bonus.get(str(context.get("weather", "")), 0))
-	weight += int(round(float(definition.get("threat_bonus", 0)) * float(context.get("threat", 0)) / 100.0))
 	var facility_bonus: Dictionary = definition.get("facility_bonus", {})
 	for facility_id in context.get("built_facilities", []):
 		weight += int(facility_bonus.get(str(facility_id), 0))

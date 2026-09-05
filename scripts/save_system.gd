@@ -2,7 +2,7 @@ class_name SaveSystem
 extends RefCounted
 
 const SAVE_PATH := "user://embers_camp_save.json"
-const CURRENT_VERSION := 8
+const CURRENT_VERSION := 9
 
 func save_game(data: Dictionary) -> bool:
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -38,6 +38,11 @@ func migrate(data: Dictionary) -> Dictionary:
 		if not result.has("day_return_required"): result["day_return_required"] = false
 		if not result.has("night_settlement_applied"): result["night_settlement_applied"] = false
 		if not result.has("night_context"): result["night_context"] = {}
+	var night_context: Variant = result.get("night_context", {})
+	if night_context is Dictionary:
+		var normalized_night_context: Dictionary = night_context.duplicate(true)
+		normalized_night_context.erase("threat_before")
+		result["night_context"] = normalized_night_context
 
 	# Normalize the old split construction representation to one active project.
 	var building_data: Variant = result.get("buildings", {})
@@ -68,10 +73,14 @@ func migrate(data: Dictionary) -> Dictionary:
 	var survival_data: Variant = result.get("survival", {})
 	if survival_data is Dictionary:
 		var normalized_survival: Dictionary = survival_data.duplicate(true)
+		# Threat was removed in save version 9. Old values are intentionally
+		# discarded so the retired mechanic cannot re-enter runtime state.
+		normalized_survival.erase("threat")
 		var goal: Variant = normalized_survival.get("current_goal", {})
 		if goal is Dictionary and str(goal.get("id", "")) == "week_survivor":
 			normalized_survival["current_goal"] = {}
 		result["survival"] = normalized_survival
+	result.erase("safety")
 
 	result["version"] = CURRENT_VERSION
 	return result

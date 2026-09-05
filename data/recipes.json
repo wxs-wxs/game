@@ -1,6 +1,5 @@
 {
-  "cooked_food": {"id":"cooked_food", "name":"熟食", "cost":{"food":2,"water":1,"fuel":1}, "output":{"cooked_food":1}, "description":"恢复饥饿并提升少量士气"},
   "bandage": {"id":"bandage", "name":"绷带", "cost":{"cloth":1,"medicine":1}, "output":{"bandage":1}, "description":"恢复生命并清除受伤"},
-  "torch": {"id":"torch", "name":"火把", "cost":{"wood":1,"fiber":1,"fuel":1}, "output":{"torch":1}, "description":"下一次废墟搜寻失败率降低 20%"},
-  "trap": {"id":"trap", "name":"陷阱", "cost":{"wood":2,"scrap":1}, "output":{"trap":1}, "description":"部署后下一次野兽夜袭伤害降低 5"}
+  "torch": {"id":"torch", "name":"火把", "cost":{"wood":2,"fiber":1}, "output":{"torch":1}, "description":"下一次废墟搜寻失败率降低 20%"},
+  "trap": {"id":"trap", "name":"陷阱", "cost":{"wood":2,"metal":1}, "output":{"trap":1}, "description":"部署后下一次野兽夜袭伤害降低 5"}
 }

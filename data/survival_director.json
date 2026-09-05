@@ -3,7 +3,6 @@
     "balanced": {
       "label": "均衡",
       "description": "保持营地稳定，不改变基础消耗。",
-      "threat_delta": 0,
       "morale_delta": 0,
       "food_save": 0,
       "wood_cost": 0,
@@ -11,26 +10,15 @@
     },
     "rationing": {
       "label": "紧缩配给",
-      "description": "每晚节约 1 食物，但会降低士气并增加紧张。",
-      "threat_delta": 3,
+      "description": "每晚节约 1 食物，但会降低士气。",
       "morale_delta": -3,
       "food_save": 1,
       "wood_cost": 0,
       "reward_multiplier": 1.0
     },
-    "fortify": {
-      "label": "加固防线",
-      "description": "每晚消耗 1 木材，显著压低营地威胁。",
-      "threat_delta": -10,
-      "morale_delta": 0,
-      "food_save": 0,
-      "wood_cost": 1,
-      "reward_multiplier": 1.0
-    },
     "expedition": {
       "label": "主动出击",
-      "description": "鼓励探索，目标奖励提高，但更容易暴露营地。",
-      "threat_delta": 5,
+      "description": "鼓励探索，目标奖励提高，但需要更积极行动。",
       "morale_delta": 1,
       "food_save": 0,
       "wood_cost": 0,
@@ -44,8 +32,7 @@
       "resource": "food",
       "target": 5,
       "label": "带回 %d 食物",
-      "reward": {"food": 2, "wood": 1},
-      "miss_threat": 4
+      "reward": {"food": 2, "wood": 1}
     },
     {
       "id": "wood_run",
@@ -53,8 +40,7 @@
       "resource": "wood",
       "target": 4,
       "label": "带回 %d 木材",
-      "reward": {"wood": 1, "metal": 2},
-      "miss_threat": 3
+      "reward": {"wood": 1, "metal": 2}
     },
     {
       "id": "scavenge",
@@ -62,32 +48,28 @@
       "resource": "metal",
       "target": 2,
       "label": "搜集 %d 废料",
-      "reward": {"medicine": 1},
-      "miss_threat": 4
+      "reward": {"medicine": 1}
     },
     {
       "id": "steady_hands",
       "kind": "morale_min",
       "target": 55,
       "label": "让平均士气保持在 %d",
-      "reward": {"wood": 2},
-      "miss_threat": 3
+      "reward": {"wood": 2}
     },
     {
       "id": "build_progress",
       "kind": "build_count",
       "target": 1,
       "label": "完成 %d 项设施建设",
-      "reward": {"metal": 1},
-      "miss_threat": 2
+      "reward": {"metal": 1}
     },
     {
       "id": "survive",
       "kind": "survive",
       "target": 1,
       "label": "让所有幸存者撑过今晚",
-      "reward": {"food": 2},
-      "miss_threat": 6
+      "reward": {"food": 2}
     }
   ],
   "milestones": [
@@ -126,13 +108,6 @@
       "target": 25,
       "label": "食物储备达到 25",
       "reward": {"wood": 2}
-    },
-    {
-      "id": "low_threat",
-      "condition": "threat_at_most",
-      "target": 25,
-      "label": "将营地威胁压到 25 以下",
-      "reward": {"morale": 3}
     }
   ],
   "fire": {
@@ -142,11 +117,11 @@
     "house_fireplace_warmth": 7.0
   },
   "weather": {
-    "晴朗": {"threat_delta": -1, "gather_multiplier": 1.05, "fuel_extra": 0},
-    "多云": {"threat_delta": 0, "gather_multiplier": 1.0, "fuel_extra": 0},
-    "浓雾": {"threat_delta": 3, "gather_multiplier": 0.9, "fuel_extra": 0},
-    "暴雨": {"threat_delta": 5, "gather_multiplier": 0.8, "fuel_extra": 1},
-    "寒冷": {"threat_delta": 4, "gather_multiplier": 1.0, "fuel_extra": 2}
+    "晴朗": {"gather_multiplier": 1.05, "fuel_extra": 0},
+    "多云": {"gather_multiplier": 1.0, "fuel_extra": 0},
+    "浓雾": {"gather_multiplier": 0.9, "fuel_extra": 0},
+    "暴雨": {"gather_multiplier": 0.8, "fuel_extra": 1},
+    "寒冷": {"gather_multiplier": 1.0, "fuel_extra": 2}
   }
 }
 

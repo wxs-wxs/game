@@ -5,7 +5,7 @@ func _init() -> void:
 	game.start_exploration()
 	game.day_return_required = true
 	var before := game.to_dict()
-	assert(int(before.get("version", 0)) >= 8)
+	assert(int(before.get("version", 0)) >= 9)
 	assert(bool(before.get("day_return_required", false)))
 	var restored := GameManager.new()
 	restored.from_dict(before)

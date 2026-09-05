@@ -1,7 +1,6 @@
 {
   "搜寻食物": {"id":"food", "label":"搜寻食物", "short":"食物", "skill":"gather", "fatigue":4, "morale":1, "hint":"获得食物，受天气影响"},
   "收集木材": {"id":"wood", "label":"收集木材", "short":"木材", "skill":"gather", "fatigue":4, "morale":1, "hint":"获得木材，暴雨时较慢"},
-  "搜寻废料": {"id":"scrap", "label":"搜寻废料", "short":"废料", "skill":"gather", "fatigue":5, "morale":1, "hint":"获得废料与少量药品"},
   "建造设施": {"id":"build", "label":"建造设施", "short":"建造", "skill":"build", "fatigue":5, "morale":1, "hint":"推进当前建造项目"},
   "治疗伤员": {"id":"heal", "label":"治疗伤员", "short":"治疗", "skill":"medical", "fatigue":3, "morale":0, "hint":"消耗药品恢复生命"},
   "休息": {"id":"rest", "label":"休息", "short":"休息", "skill":"none", "fatigue":-10, "morale":-2, "hint":"恢复体力和士气"},

@@ -52,23 +52,46 @@ func craft(recipe_id: String) -> Dictionary:
 func use_item(item_id: String) -> Dictionary:
 	if game == null or game.resources == null: return {"ok":false, "reason":"制作系统未就绪。"}
 	var hero: Survivor = game.get_protagonist()
+	if str(game.phase) == GameManager.PHASE_ENDED or hero == null or not hero.alive or hero.health <= 0:
+		return {"ok":false, "reason":"游戏已结束，无法使用物品。"}
 	if item_id == "bandage" and (hero == null or (not hero.injured and hero.health >= 100)):
 		return {"ok":false, "reason":"当前没有受伤，绷带未消耗。"}
+	if item_id == "medicine" and (hero == null or hero.health >= 100):
+		return {"ok":false, "reason":"生命值已经全满，药品未消耗。"}
 	if not _consume_item(item_id): return {"ok":false, "reason":"没有%s可使用。" % game.resources.display_name(item_id)}
 	var message := ""
 	match item_id:
+		"food":
+			if hero == null: return {"ok":false, "reason":"没有可用角色。"}
+			hero.apply_change("health", 3); hero.apply_change("hunger", 12); message = "吃下生浆果，生命 +3，饱腹 +12。"
 		"cooked_food":
 			if hero == null: return {"ok":false, "reason":"没有可用角色。"}
-			hero.apply_change("hunger", 25); hero.apply_change("morale", 2); message = "食用了熟食，饥饿 +25，士气 +2。"
+			hero.apply_change("health", 28); hero.apply_change("hunger", 25); hero.apply_change("morale", 2); message = "吃下熟浆果，生命 +28，饱腹 +25，士气 +2。"
+		"medicine":
+			if hero == null: return {"ok":false, "reason":"没有可用角色。"}
+			hero.health = 100; hero.alive = true; hero.injured = false; hero.sick = false; message = "使用药品，生命值已回满。"
 		"bandage":
 			if hero == null: return {"ok":false, "reason":"没有可用角色。"}
 			hero.apply_change("health", 20); hero.injured = false; message = "使用绷带，生命 +20，伤势已处理。"
+		# Utility items keep their existing gameplay roles after the resource
+		# cleanup; their recipes no longer depend on the removed resources.
 		"torch":
 			game.torch_bonus_pending = true; message = "点燃火把，下一次废墟搜寻失败率降低 20%。"
 		"trap":
 			game.deployed_traps = int(game.deployed_traps) + 1; message = "陷阱已部署，下一次野兽夜袭伤害降低 5。"
 		_:
-			_add_item_back(item_id); return {"ok":false, "reason":"该物品无法使用。"}
+			if ResourceManager.FISH_KEYS.has(item_id):
+				if hero == null: return {"ok":false, "reason":"没有可用角色。"}
+				hero.apply_change("health", 3); hero.apply_change("hunger", game.resources.fish_food_value(item_id) * 5); message = "生吃%s，生命 +3。" % game.resources.fish_name(item_id)
+			elif ResourceManager.COOKED_FISH_KEYS.has(item_id):
+				if hero == null: return {"ok":false, "reason":"没有可用角色。"}
+				var raw_key := ""
+				for fish_key in ResourceManager.FISH_KEYS:
+					if game.resources.cooked_fish_key(fish_key) == item_id: raw_key = fish_key; break
+				var value: int = game.resources.fish_food_value(raw_key)
+				hero.apply_change("health", 32); hero.apply_change("hunger", value * 7); hero.apply_change("morale", 2); message = "吃下%s，生命 +32，饱腹 +%d。" % [game.resources.display_name(item_id), value * 7]
+			else:
+				_add_item_back(item_id); return {"ok":false, "reason":"该物品无法使用。"}
 	if game.daily_log != null: game.daily_log.append(message)
 	return {"ok":true, "reason":message, "item_id":item_id}
 

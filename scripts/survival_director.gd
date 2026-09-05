@@ -16,7 +16,6 @@ var weather_defs: Dictionary = {}
 
 var campaign_seed: int = 14072026
 var rng := RandomNumberGenerator.new()
-var threat: int = 30
 var policy_id: String = "balanced"
 var streak: int = 0
 var best_streak: int = 0
@@ -44,7 +43,6 @@ func _init() -> void:
 func reset(seed_value: int = 14072026) -> void:
 	campaign_seed = seed_value
 	rng.seed = _positive_seed(campaign_seed + 104729)
-	threat = 30
 	policy_id = "balanced" if policies.has("balanced") else str(policies.keys()[0])
 	streak = 0
 	best_streak = 0
@@ -74,9 +72,6 @@ func begin_day(day_value: int, weather: String, game = null) -> Dictionary:
 	goal_day = normalized_day
 	_snapshot_day(game)
 	_select_goal(normalized_day)
-	var weather_info := weather_effect(weather)
-	threat = clampi(threat + int(weather_info.get("threat_delta", 0)), 0, 100)
-	_sync_safety(game)
 	return get_goal_summary(game)
 
 ## Resolve the strategy layer after food/night effects have been applied.
@@ -113,19 +108,9 @@ func settle_day(game) -> Array[String]:
 			lines.append("连胜奖励：补给箱 +%s。" % _reward_text(streak_reward, game))
 	else:
 		streak = 0
-		var miss_threat := int(current_goal.get("miss_threat", 3))
-		threat = clampi(threat + miss_threat, 0, 100)
-		lines.append("每日目标未完成：%s，营地威胁 +%d。" % [_goal_label(current_goal), miss_threat])
+		lines.append("每日目标未完成：%s。" % _goal_label(current_goal))
 
-	var policy_delta := _apply_policy(game, lines)
-	var pressure_delta := _ambient_pressure(game)
-	threat = clampi(threat + policy_delta + pressure_delta, 0, 100)
-	if pressure_delta != 0:
-		lines.append("营地压力变化：%+d。" % pressure_delta)
-	_sync_safety(game)
-
-	if threat >= 80:
-		_apply_high_threat_incident(game, lines)
+	_apply_policy(game, lines)
 	completed_days += 1 if _alive_count(game) > 0 else 0
 	_evaluate_milestones(game, lines)
 	last_settled_day = current_day
@@ -203,9 +188,6 @@ func get_goal_summary(game = null) -> Dictionary:
 func get_status(game = null) -> Dictionary:
 	var weather_name := str(game.weather) if game != null else ""
 	return {
-		"threat":threat,
-		"threat_label":threat_label(),
-		"safety":100 - threat,
 		"policy":policy_summary(),
 		"streak":streak,
 		"best_streak":best_streak,
@@ -221,21 +203,15 @@ func event_context(game) -> Dictionary:
 	if game != null and game.buildings != null:
 		for key in game.buildings.built:
 			built_ids.append(str(key))
-	return {"weather": str(game.weather) if game != null else "", "threat": threat, "built_facilities": built_ids, "recent_actions": action_counts.duplicate(true)}
+	return {"weather": str(game.weather) if game != null else "", "built_facilities": built_ids, "recent_actions": action_counts.duplicate(true)}
 
 func status(game = null) -> Dictionary:
 	return get_status(game)
 
-func threat_label() -> String:
-	if threat >= 80: return "危急"
-	if threat >= 60: return "紧张"
-	if threat >= 35: return "警戒"
-	return "平稳"
-
 func weather_effect(weather_name: String) -> Dictionary:
 	var info: Dictionary = weather_defs.get(weather_name, {})
 	if info.is_empty():
-		return {"id":weather_name, "label":weather_name, "threat_delta":0, "gather_multiplier":1.0, "fuel_extra":0}
+		return {"id":weather_name, "label":weather_name, "gather_multiplier":1.0, "fuel_extra":0}
 	var result: Dictionary = info.duplicate(true)
 	result["id"] = weather_name
 	result["label"] = weather_name
@@ -253,11 +229,6 @@ func record_event(event_id: String, choice_id: String = "") -> void:
 	if event_id.is_empty():
 		return
 	record_action("event:" + event_id)
-	var delta_by_event := {"beast":4, "rain":2, "cold":2, "wanderer":-1, "spoilage":1, "argument":1, "cache":2}
-	var delta := int(delta_by_event.get(event_id, 0))
-	if choice_id in ["reinforce", "burn", "alarm", "mediate", "mark", "turn_away"]:
-		delta -= 2
-	threat = clampi(threat + delta, 0, 100)
 
 func record_building(building_id: String) -> void:
 	record_action("building:" + building_id)
@@ -270,7 +241,6 @@ func to_dict() -> Dictionary:
 		"version":STATE_VERSION,
 		"campaign_seed":campaign_seed,
 		"rng_state":rng.state,
-		"threat":threat,
 		"policy_id":policy_id,
 		"streak":streak,
 		"best_streak":best_streak,
@@ -299,7 +269,6 @@ func from_dict(data: Dictionary) -> void:
 	rng.seed = _positive_seed(campaign_seed + 104729)
 	if data.has("rng_state"):
 		rng.state = int(data.get("rng_state", rng.state))
-	threat = clampi(int(data.get("threat", 30)), 0, 100)
 	policy_id = str(data.get("policy_id", "balanced"))
 	if not policies.has(policy_id): policy_id = "balanced" if policies.has("balanced") else str(policies.keys()[0])
 	streak = maxi(0, int(data.get("streak", 0)))
@@ -375,7 +344,7 @@ func observe_resources(game) -> void:
 
 func _select_goal(day_value: int) -> void:
 	if goal_pool.is_empty():
-		current_goal = {"id":"survive", "kind":"survive", "target":1, "label":"让所有幸存者撑过今晚", "reward":{"food":1}, "miss_threat":5, "progress":0, "completed":false}
+		current_goal = {"id":"survive", "kind":"survive", "target":1, "label":"让所有幸存者撑过今晚", "reward":{"food":1}, "progress":0, "completed":false}
 		return
 	var index := posmod(_positive_seed(campaign_seed) + day_value * 17 + goal_cursor, goal_pool.size())
 	goal_cursor += 1
@@ -415,9 +384,8 @@ func _grant_reward(game, reward: Dictionary) -> void:
 		elif game.resources.amounts.has(id):
 			game.resources.add(id, amount)
 
-func _apply_policy(game, lines: Array[String]) -> int:
+func _apply_policy(game, lines: Array[String]) -> void:
 	var policy: Dictionary = policies.get(policy_id, {})
-	var delta := int(policy.get("threat_delta", 0))
 	var morale_delta := int(policy.get("morale_delta", 0))
 	if morale_delta != 0:
 		game.change_all("morale", morale_delta)
@@ -437,41 +405,9 @@ func _apply_policy(game, lines: Array[String]) -> int:
 		var cost := {"wood":wood_cost}
 		if game.resources.can_afford(cost):
 			game.resources.spend(cost)
-			lines.append("政策「%s」消耗木材加固了防线。" % str(policy.get("label", policy_id)))
+			lines.append("政策「%s」消耗了 %d 木材。" % [str(policy.get("label", policy_id)), wood_cost])
 		else:
-			delta += 5
-			lines.append("政策「%s」缺少木材，防线出现缺口。" % str(policy.get("label", policy_id)))
-	return delta
-
-func _ambient_pressure(game) -> int:
-	var delta := 0
-	var no_food := int(game.no_food_days)
-	if no_food > 0: delta += mini(10, no_food * 2)
-	var morale := _average_morale(game)
-	if morale < 35: delta += 5
-	elif morale >= 75: delta -= 2
-	var guard := 0
-	if game.buildings != null:
-		guard = int(game.buildings.guard_power)
-	if guard > 0: delta -= mini(6, guard)
-	if int(game.house_level) >= 2: delta -= 2
-	return delta
-
-func _apply_high_threat_incident(game, lines: Array[String]) -> void:
-	var chance := clampf(0.15 + float(threat - 80) * 0.015, 0.15, 0.5)
-	if rng.randf() > chance:
-		lines.append("威胁过高但夜哨及时发现了动静。")
-		return
-	var victim = game.random_alive()
-	if victim != null:
-		var damage := 5 + int((threat - 80) / 5)
-		victim.apply_change("health", -damage)
-		victim.injured = true
-		lines.append("高威胁事件：%s 在夜袭中受伤（-%d 生命）。" % [victim.display_name, damage])
-	var lost := mini(2, int(game.resources.get_amount("metal")))
-	if lost > 0:
-		game.resources.add("metal", -lost)
-		lines.append("夜袭还带走了 %d 金属。" % lost)
+			lines.append("政策「%s」木材不足，未能执行。" % str(policy.get("label", policy_id)))
 
 func _evaluate_milestones(game, lines: Array[String]) -> void:
 	for definition_variant in milestone_defs:
@@ -496,7 +432,6 @@ func _milestone_met(definition: Dictionary, game) -> bool:
 		"built_count": return _built_count(game) >= target
 		"survivor_count": return _survivor_count(game) >= target
 		"resource_stock": return int(game.resources.get_amount(str(definition.get("resource", "food")))) >= target
-		"threat_at_most": return threat <= target
 		"total_collected": return int(game.resources.total_collected) >= target
 	return false
 
@@ -536,10 +471,6 @@ func _survivor_count(game) -> int:
 func _built_count(game) -> int:
 	return int(game.built_facilities.size()) if game != null else 0
 
-func _sync_safety(game) -> void:
-	if game != null:
-		game.safety = clampi(100 - threat, 0, 100)
-
 func _positive_seed(value: int) -> int:
 	if value == -9223372036854775808:
 		return 1
@@ -549,21 +480,38 @@ func _normalize_definitions() -> void:
 	policies = definitions.get("policies", {})
 	if not policies is Dictionary: policies = {}
 	if policies.is_empty():
-		policies = {"balanced":{"label":"均衡", "description":"保持营地稳定。", "threat_delta":0, "morale_delta":0, "food_save":0, "wood_cost":0, "reward_multiplier":1.0}}
+		policies = {"balanced":{"label":"均衡", "description":"保持营地稳定。", "morale_delta":0, "food_save":0, "wood_cost":0, "reward_multiplier":1.0}}
+	for policy_id_key in policies.keys():
+		var policy: Variant = policies[policy_id_key]
+		if policy is Dictionary:
+			policy.erase("threat_delta")
+	var filtered_goals: Array = []
 	goal_pool = definitions.get("goals", [])
 	if not goal_pool is Array: goal_pool = []
-	var filtered_goals: Array = []
 	for goal in goal_pool:
 		if goal is Dictionary and str(goal.get("id", "")) == "week_survivor":
 			continue
-		filtered_goals.append(goal)
+		if goal is Dictionary:
+			var normalized_goal: Dictionary = goal.duplicate(true)
+			normalized_goal.erase("miss_threat")
+			filtered_goals.append(normalized_goal)
 	goal_pool = filtered_goals
 	milestone_defs = definitions.get("milestones", [])
 	if not milestone_defs is Array: milestone_defs = []
+	var filtered_milestones: Array = []
+	for milestone in milestone_defs:
+		if milestone is Dictionary and str(milestone.get("condition", "")) == "threat_at_most":
+			continue
+		filtered_milestones.append(milestone)
+	milestone_defs = filtered_milestones
 	weather_defs = definitions.get("weather", {})
 	if not weather_defs is Dictionary: weather_defs = {}
+	for weather_id in weather_defs.keys():
+		var weather: Variant = weather_defs[weather_id]
+		if weather is Dictionary:
+			weather.erase("threat_delta")
 	if weather_defs.is_empty():
-		weather_defs = {"晴朗":{"threat_delta":-1, "gather_multiplier":1.05, "fuel_extra":0}, "暴雨":{"threat_delta":5, "gather_multiplier":0.8, "fuel_extra":1}, "寒冷":{"threat_delta":4, "gather_multiplier":1.0, "fuel_extra":2}}
+		weather_defs = {"晴朗":{"gather_multiplier":1.05, "fuel_extra":0}, "暴雨":{"gather_multiplier":0.8, "fuel_extra":1}, "寒冷":{"gather_multiplier":1.0, "fuel_extra":2}}
 
 func _load_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
