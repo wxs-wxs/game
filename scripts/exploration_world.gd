@@ -268,6 +268,10 @@ func enter_house() -> void:
 func exit_house() -> void:
 	if not is_inside or player == null: return
 	nearest = null
+	if interior_manager != null and is_instance_valid(interior_manager.interior):
+		for point in interactions.duplicate():
+			if is_instance_valid(point) and point.get_parent() == interior_manager.interior:
+				interaction_registry.unregister(point)
 	interior_manager.exit()
 	is_inside = false
 	for point in interactions:
