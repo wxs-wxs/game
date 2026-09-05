@@ -227,9 +227,13 @@ func finish_day() -> void:
 func force_finish_day() -> void:
 	if phase != PHASE_DAY: return
 	var before_progress := time.progress()
+	var prior_work_accumulator := time.work_accumulator
 	var remaining_ticks: int = time.remaining_work_ticks()
 	for index in range(maxi(0, remaining_ticks)): _resolve_work_tick()
 	var advanced: Dictionary = _day_cycle_service.advance(time, phase, TimeManager.DAY_SECONDS - time.elapsed)
+	# Force-finish historically resolves pending work without consuming the
+	# clock's fractional accumulator; retain that save-visible behavior.
+	time.work_accumulator = prior_work_accumulator
 	_update_temperature(maxf(0.0, float(advanced.get("elapsed_after", time.elapsed)) - float(advanced.get("elapsed_before", time.elapsed))))
 	_emit_dusk_warning_if_crossed(before_progress)
 	finish_day()

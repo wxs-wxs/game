@@ -17,6 +17,12 @@ func _init() -> void:
 	assert(game.phase in [GameManager.PHASE_EVENT, GameManager.PHASE_REPORT, GameManager.PHASE_ENDED])
 	var second := game.finish_exploration_day()
 	assert(not bool(second.get("ok", false)))
+	var forced := GameManager.new()
+	forced.start_exploration()
+	forced.time.elapsed = 10.0
+	forced.time.work_accumulator = 3.0
+	forced.force_finish_day()
+	assert(is_equal_approx(forced.time.work_accumulator, 3.0))
 	var audio := AudioServiceResource.new()
 	audio.headless_mode = true
 	root.add_child(audio)

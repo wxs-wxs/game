@@ -159,3 +159,23 @@ checker 修复后，Task 4 inventory gate 全部通过。报告历史部分保�
 ## Fix round 2 conclusion
 
 注入的 `InventoryState` 不再通过 `ResourceLedger` 直接写入内部字典，项目级架构检查与正反向 fixture 均通过；库存回归和 parser 均保持通过。
+
+## Resource atomic weather diagnosis
+
+复现命令：
+
+```powershell
+& "C:\projects\game\.tools\godot\Godot_v4.7.2-stable_win64_console.exe" --headless --path . --script res://tests/resource_atomic_weather_regression.gd --quit-after 10
+```
+
+输出在 `tests/resource_atomic_weather_regression.gd:35` 报 assertion failed（`resources.storage.food > 0`），但 Godot 进程退出码为 `0`；该脚本当前不能仅以退出码判断通过。
+
+原因是测试在初始化后执行 `resources.storage = {}`。`ResourceManager.storage` 是 `_bind_state_aliases()` 建立的公开字典别名，赋值会替换 facade 字段本身，却不会替换 `inventory_state.storage` 或 `ledger.inventory` 所持有的原字典。`TaskSystem.resolve_tick()` 的 `camp_task` 奖励通过 `ResourceLedger -> InventoryState.adjust_storage()` 写入原字典，所以断言读取被替换的空字典而失败。
+
+证据：
+
+- `421265c` 本轮只将 `ResourceLedger` 原有的 `inventory.storage/backpack` 直接写入替换为等价的 `adjust_storage/adjust_backpack` 调用，没有改变 ResourceManager alias 定义或赋值行为。
+- `git diff 421265c^ 421265c -- scripts/resource_manager.gd` 无改动；alias 赋值问题在本轮之前已存在。
+- `inventory_domain_regression`、`resource_manager_facade_regression`、`resource_chain_smoke`、`inventory_action_regression`、`storage_drag_regression` 均保持各自 `*_OK`，退出码为 `0`。
+
+本轮其余验证：parser 退出码 `0`；checker fixture 输出 `ARCHITECTURE_CHECK_REGRESSION_OK`、退出码 `0`；项目 checker 输出 `ARCHITECTURE_BOUNDARY_OK`、退出码 `0`；`git diff --check` 退出码 `0`。三个 Godot smoke/regression 进程仍有既有资源/ObjectDB 泄漏 warning。未修改运行时代码或生成元数据；该问题属于后续 alias setter/测试契约修复 concern，不是 Task4 `adjust_*` 引入的回归。
