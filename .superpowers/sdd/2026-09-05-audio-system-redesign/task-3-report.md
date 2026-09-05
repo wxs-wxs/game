@@ -2,7 +2,7 @@
 
 Status: PASS (Task 3 focused checks)
 
-Commit: 4788d3e (amended below to include this hash in the report)
+Commit: 4788d3e (implementation; report metadata is in follow-up commit `defe47a`)
 
 Changes:
 
