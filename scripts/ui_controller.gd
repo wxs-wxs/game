@@ -114,9 +114,11 @@ var _report_open := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
 const UiFactory := preload("res://scripts/presentation/theme/ui_factory.gd")
+const HudView := preload("res://scripts/presentation/hud/hud_view.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
 const StorageTransferSlotClass := preload("res://scripts/storage_transfer_slot.gd")
 var _ui_factory: UiFactory
+var hud_view: HudView
 
 # All values below are authored directly in the 960x540 logical viewport.
 const VIEW_SIZE := Vector2(960, 540)
@@ -202,6 +204,7 @@ func _clear_hud() -> void:
 	if is_instance_valid(hud):
 		hud.free()
 	hud = null
+	hud_view = null
 	pause_panel = null
 	exit_button = null
 	feedback_panel = null
@@ -320,6 +323,49 @@ func _can_craft_pickaxe() -> bool:
 	return bool(game.resources.can_craft_pickaxe())
 
 func _build_hud() -> void:
+	if hud == null:
+		return
+	hud_view = HudView.new()
+	hud_view.setup(hud, _ui_factory)
+	day_label = hud_view.day_label
+	clock_icon_label = hud_view.clock_icon_label
+	clock_label = hud_view.clock_label
+	weather_icon_label = hud_view.weather_icon_label
+	weather_label = hud_view.weather_label
+	temperature_label = hud_view.temperature_label
+	survivor_panel = hud_view.survivor_panel
+	survivor_name_label = hud_view.survivor_name_label
+	survivor_status_label = hud_view.survivor_status_label
+	survivor_avatar_sprite = hud_view.survivor_avatar_sprite
+	objective_panel = hud_view.objective_panel
+	objective_live_label = hud_view.objective_live_label
+	objective_reward_label = hud_view.objective_reward_label
+	objective_log_label = hud_view.objective_log_label
+	prompt_label = hud_view.prompt_label
+	interact_button = hud_view.interact_button
+	feedback_panel = hud_view.feedback_panel
+	message_label = hud_view.message_label
+	interaction_name_label = hud_view.interaction_name_label
+	interaction_progress_bar = hud_view.interaction_progress_bar
+	_resource_badges = hud_view.resource_badges
+	_resource_icons = hud_view.resource_icons
+	_survivor_meter_bars = hud_view.survivor_meter_bars
+	shortcut_button = hud_view.shortcut_button
+	if interact_button != null and not interact_button.pressed.is_connected(_on_interact_pressed):
+		interact_button.pressed.connect(_on_interact_pressed)
+	if shortcut_button != null and not shortcut_button.pressed.is_connected(_toggle_shortcut_panel):
+		shortcut_button.pressed.connect(_toggle_shortcut_panel)
+	_build_tool_selection_panel()
+	_build_pause_panel()
+	_build_backpack_panel()
+	_build_crafting_panel()
+	_build_storage_panel()
+	_build_shortcut_panel()
+	_build_log_panel()
+	_build_event_panel()
+	_build_report_panel()
+
+func _build_hud_legacy() -> void:
 	if hud == null:
 		return
 	# The map is the primary surface. Permanent information is split into small
@@ -479,6 +525,29 @@ func _build_hud() -> void:
 	_build_log_panel()
 	_build_event_panel()
 	_build_report_panel()
+	_bind_hud_view()
+
+func _bind_hud_view() -> void:
+	if hud == null:
+		return
+	hud_view = HudView.new()
+	hud_view.factory = _ui_factory
+	hud_view.bind_existing(hud, {
+		"day_label": day_label, "clock_icon_label": clock_icon_label,
+		"clock_label": clock_label, "weather_icon_label": weather_icon_label,
+		"weather_label": weather_label, "temperature_label": temperature_label,
+		"survivor_panel": survivor_panel, "survivor_name_label": survivor_name_label,
+		"survivor_status_label": survivor_status_label, "survivor_avatar_sprite": survivor_avatar_sprite,
+		"objective_panel": objective_panel, "objective_live_label": objective_live_label,
+		"objective_reward_label": objective_reward_label, "objective_log_label": objective_log_label,
+		"prompt_panel": prompt_label.get_parent() if prompt_label != null else null,
+		"prompt_label": prompt_label, "interact_button": interact_button,
+		"feedback_panel": feedback_panel, "message_label": message_label,
+		"interaction_panel": interaction_progress_bar.get_parent() if interaction_progress_bar != null else null,
+		"interaction_name_label": interaction_name_label, "interaction_progress_bar": interaction_progress_bar,
+		"resource_badges": _resource_badges, "resource_icons": _resource_icons,
+		"survivor_meter_bars": _survivor_meter_bars,
+	})
 
 func _build_tool_selection_panel() -> void:
 	build_selection_dim = ColorRect.new()
@@ -1049,42 +1118,8 @@ func _close_standard_overlays() -> void:
 func refresh() -> void:
 	if game == null:
 		return
-	var resources = game.resources
 	var hero: Survivor = game.get_protagonist() if game.has_method("get_protagonist") else null
 	var current_time := Time.get_ticks_msec() / 1000.0
-
-	if resources != null:
-		for index in range(mini(_resource_badges.size(), RESOURCE_KEYS.size())):
-			var badge: Label = _resource_badges[index]
-			var key := str(RESOURCE_KEYS[index])
-			var amount := _resource_amount(resources, key)
-			# The capacity stays in the tooltip; a single compact quantity keeps
-			# every 16px icon slot readable at the native HUD scale.
-			badge.text = str(amount)
-			var tooltip := "%s：%d / %d" % [resources.display_name(key), amount, _resource_capacity(resources, key)]
-			badge.tooltip_text = tooltip
-			_resource_icons[index].tooltip_text = tooltip
-	if day_label != null:
-		day_label.text = "第%d天" % int(game.day)
-	if clock_label != null:
-		clock_label.text = _clock_text()
-	if weather_label != null:
-		weather_label.text = _weather_text(str(game.weather))
-	if temperature_label != null:
-		var temperature_status: Dictionary = game.get_temperature_status() if game.has_method("get_temperature_status") else {}
-		temperature_label.text = "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))]
-		temperature_label.tooltip_text = "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0))
-	if hero != null:
-		var health := _stat_value(hero, "health")
-		var hunger := _stat_value(hero, "hunger")
-		var energy := _stat_value(hero, "energy")
-		var morale := _stat_value(hero, "morale")
-		_update_survivor_card(hero)
-	else:
-		_update_survivor_card(null)
-
-	_update_target(hero)
-	_update_log()
 	_refresh_phase_overlay()
 	_update_buttons()
 	_refresh_backpack_panel()
@@ -1094,10 +1129,9 @@ func refresh() -> void:
 		pause_panel.visible = paused_by_menu
 	if pause_dim != null:
 		pause_dim.visible = paused_by_menu
-	if message_label != null and message_until > 0.0 and message_until <= current_time:
-		message_label.text = ""
-		message_until = 0.0
-		_update_log()
+		if message_label != null and message_until > 0.0 and message_until <= current_time:
+			message_label.text = ""
+			message_until = 0.0
 
 	# Keep context prompt and progress state coherent when a save/load operation
 	# restores a world while the HUD is already visible.
@@ -1115,6 +1149,60 @@ func refresh() -> void:
 	elif _last_prompt != "" and prompt_label != null:
 		prompt_label.text = _last_prompt
 		_set_prompt_visible(true)
+	if hud_view != null:
+		hud_view.refresh(_build_ui_snapshot().duplicate(true))
+
+func _build_ui_snapshot() -> Dictionary:
+	var resources_snapshot: Dictionary = {}
+	if game != null and game.resources != null:
+		for key in RESOURCE_KEYS:
+			resources_snapshot[key] = {
+				"amount": _resource_amount(game.resources, key),
+				"capacity": _resource_capacity(game.resources, key),
+				"name": game.resources.display_name(key) if game.resources.has_method("display_name") else key,
+			}
+	var hero: Survivor = game.get_protagonist() if game != null and game.has_method("get_protagonist") else null
+	var survivor_snapshot := {
+		"name": str(hero.display_name) if hero != null else "无人",
+		"status": ("Lv.%d %s" % [int(hero.skill_value("build")) if hero.has_method("skill_value") else 1, hero.status_text() if hero.has_method("status_text") else "正常"]) if hero != null else "离队",
+	}
+	for key in ["health", "hunger", "energy", "morale"]:
+		survivor_snapshot[key] = _stat_value(hero, key)
+	var temperature_status: Dictionary = game.get_temperature_status() if game != null and game.has_method("get_temperature_status") else {}
+	return {
+		"day": "第%d天" % int(game.day) if game != null else "",
+		"clock": _clock_text(),
+		"weather": _weather_text(str(game.weather)) if game != null else "",
+		"temperature": {"text": temperature_label.text if temperature_label != null else "", "tooltip": temperature_label.tooltip_text if temperature_label != null else "", "environment": temperature_status.get("environment", 0.0), "body": temperature_status.get("body", 0.0)},
+		"resources": resources_snapshot,
+		"survivor": survivor_snapshot,
+		"objective": _build_objective_snapshot(hero),
+		"log": game.daily_log.duplicate(true) if game != null and game.daily_log is Array else [],
+		"interaction": {"prompt": prompt_label.text if prompt_label != null else "", "prompt_visible": prompt_label != null and prompt_label.get_parent().visible, "name": interaction_name_label.text if interaction_name_label != null else "", "progress": interaction_progress_bar.value if interaction_progress_bar != null else 0.0},
+	}
+
+func _build_objective_snapshot(hero: Survivor) -> Dictionary:
+	var goal_text := _director_goal_text()
+	var text := goal_text if not goal_text.is_empty() else "探索荒野，带回物资"
+	if _build_selection_open:
+		text = "选择工具或设施"
+	elif world != null and world.build_mode != null and world.build_mode.active:
+		text = "放置设施 · E 确认"
+	elif world != null and world.nearest != null:
+		var point = world.nearest
+		text = str(point.display_name)
+		if point.cooldown_remaining > 0.0:
+			text += " · 冷却 %.0fs" % point.cooldown_remaining
+		if not goal_text.is_empty(): text += "\n" + goal_text
+	elif bool(game.in_house):
+		text = "屋内休整 · 找到床铺"
+	elif _is_paused():
+		text = "游戏暂停 · 选择操作"
+	if hero != null and not hero.alive:
+		text = "阿禾已倒下 · 尽快结束今天"
+	var parts := text.split("\n")
+	var reward := _goal_reward_text()
+	return {"live": _ellipsize(str(parts[0]) if not parts.is_empty() else "", 10), "reward": _ellipsize(reward if not reward.is_empty() else (str(parts[1]) if parts.size() > 1 else "准备出发"), 12)}
 
 func _update_buttons() -> void:
 	var inside := bool(game.in_house) if game != null else false
