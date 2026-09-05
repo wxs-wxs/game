@@ -40,4 +40,8 @@
 
 - Task 6: complete (commit 5bd46f4). Editor parse, 30-test runner, four-test audio runner, Main.tscn headless launch, diff check, and verification note completed; expected ObjectDB/resource-leak warnings recorded.
 
+- Final review fix wave: commit 880bb56 addresses loop playback, production listener sync, loop cue volumes, indoor rain attenuation/filtering, and remaining high-value semantic events; scoped re-review pending.
+- Final review fix follow-up: commit 171dc47 adds the missing `player.cold_warning` emission and regression assertion; scoped re-review pending.
+- Final review fix follow-up: 171dc47 review clean; all five runtime blockers and the cold-warning gap are addressed.
+
 - Final fix wave: complete (pending commit `fix: harden runtime audio playback and semantic coverage`). Loop fallback streams, live listener synchronization, cue base volumes, indoor Weather attenuation/filtering, and remaining semantic gameplay coverage are implemented. Verification remains `ALL_TESTS_OK count=30`, `AUDIO_TESTS_OK count=4`, editor parse exit `0`, and Main.tscn headless exit `0`.
