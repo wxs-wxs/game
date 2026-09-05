@@ -5,6 +5,12 @@ var capacity_label: Label
 var storage_buttons: Array[Button] = []
 var backpack_buttons: Array[Button] = []
 
+func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
+	super.setup(parent, factory_argument, callback_map)
+	var close := callbacks.get("close_button") as Button
+	if close != null and not close.pressed.is_connected(_emit_close):
+		close.pressed.connect(_emit_close)
+
 func _build() -> void:
 	panel = factory.panel(root, Vector2(24, 24), Vector2(912, 492), PixelTheme.PANEL_MID)
 	panel.name = "StoragePanel"
@@ -48,4 +54,3 @@ func _update_slots(buttons: Array[Button], values: Variant) -> void:
 		button.set_meta("item_key", key)
 		button.text = str(item.get("label", key if not key.is_empty() else "空"))
 		button.disabled = key.is_empty()
-

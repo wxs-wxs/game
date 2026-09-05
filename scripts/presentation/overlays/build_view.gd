@@ -5,6 +5,34 @@ var hint_label: Label
 var tool_buttons: Dictionary = {}
 var facility_buttons: Dictionary = {}
 
+func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
+	super.setup(parent, factory_argument, callback_map)
+	var close := callbacks.get("close_button") as Button
+	if close != null and not close.pressed.is_connected(_emit_close):
+		close.pressed.connect(_emit_close)
+	var tools: Dictionary = callbacks.get("tool_buttons", {}) if callbacks.get("tool_buttons", {}) is Dictionary else {}
+	for id in tools:
+		var button := tools[id] as Button
+		if button != null:
+			button.pressed.connect(_tool.bind(str(id)))
+	var facilities: Dictionary = callbacks.get("facility_buttons", {}) if callbacks.get("facility_buttons", {}) is Dictionary else {}
+	for id in facilities:
+		var facility := facilities[id] as Button
+		if facility != null:
+			facility.pressed.connect(_facility.bind(str(id)))
+	var enter := callbacks.get("facility_button") as Button
+	if enter != null:
+		enter.pressed.connect(func(): _emit_intent({"kind":"enter_facility_build"}))
+	var crafting := callbacks.get("crafting_button") as Button
+	if crafting != null:
+		crafting.pressed.connect(func(): _emit_intent({"kind":"open_crafting"}))
+
+func _tool(id: String) -> void:
+	_emit_intent({"kind":"craft_tool", "tool":id})
+
+func _facility(id: String) -> void:
+	_emit_intent({"kind":"select_facility", "building_id":id})
+
 func _build() -> void:
 	var dim := ColorRect.new()
 	dim.position = Vector2.ZERO
@@ -33,7 +61,7 @@ func _build() -> void:
 
 func refresh(snapshot: Dictionary) -> void:
 	super.refresh(snapshot)
-	if panel == null:
+	if panel == null or hint_label == null:
 		return
 	var ready := bool(snapshot.get("workbench_ready", true))
 	hint_label.text = str(snapshot.get("hint", "先建造简易工作台" if not ready else "选择工具后即可制作，或进入设施建造"))

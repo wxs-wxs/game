@@ -392,17 +392,17 @@ func _setup_overlay_views() -> void:
 	if hud == null:
 		return
 	backpack_view = BackpackView.new()
-	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel})
+	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel, "close_button": backpack_close_button})
 	storage_view = StorageView.new()
-	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel})
+	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel, "close_button": storage_close_button, "storage_slots": storage_slots, "backpack_slots": storage_backpack_slots})
 	crafting_view = CraftingView.new()
-	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel})
+	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel, "close_button": crafting_panel.get_node_or_null("CraftingCloseButton"), "recipe_buttons": recipe_buttons})
 	build_view = BuildView.new()
-	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel})
+	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel, "close_button": build_selection_panel.get_node_or_null("BuildSelectionCloseButton"), "tool_buttons": build_tool_buttons, "facility_buttons": facility_buttons, "facility_button": build_selection_panel.get_node_or_null("FacilityBuildButton"), "crafting_button": crafting_open_button})
 	event_report_view = EventReportView.new()
-	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel})
+	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel, "report_panel": report_panel, "event_choices": event_choice_buttons, "report_continue": report_continue_button})
 	pause_overlay = PauseOverlay.new()
-	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel})
+	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel, "resume_button": pause_panel.get_node_or_null("PauseResumeButton"), "explore_button": pause_panel.get_node_or_null("PauseExploreButton"), "save_button": pause_panel.get_node_or_null("PauseSaveButton"), "load_button": pause_panel.get_node_or_null("PauseLoadButton"), "exit_button": exit_button})
 	for view in [backpack_view, storage_view, crafting_view, build_view, event_report_view, pause_overlay]:
 		if not view.intent_requested.is_connected(dispatch_intent):
 			view.intent_requested.connect(dispatch_intent)
@@ -410,6 +410,12 @@ func _setup_overlay_views() -> void:
 			view.close_requested.connect(_on_child_overlay_close)
 
 func _on_child_overlay_close() -> void:
+	if _event_open or _report_open:
+		_event_open = false
+		_report_open = false
+		_close_pause_overlay("event")
+		_close_pause_overlay("report")
+		if event_report_view != null: event_report_view.close()
 	close_overlay()
 
 func dispatch_intent(intent: Dictionary) -> void:
@@ -432,14 +438,24 @@ func dispatch_intent(intent: Dictionary) -> void:
 			_craft_recipe(str(intent.get("recipe", "")))
 		"craft_tool":
 			_select_tool_and_craft(str(intent.get("tool", "")))
+		"select_facility":
+			_select_facility_for_build(str(intent.get("building_id", "")))
+		"enter_facility_build":
+			_enter_facility_build_mode()
+		"open_crafting":
+			_open_crafting_panel()
 		"choose_event":
 			_on_event_choice(int(intent.get("index", -1)))
+		"report_continue":
+			_on_report_continue()
 		"save_game":
 			save_game()
 		"load_game":
 			load_game()
 		"exit_game":
 			exit_game()
+		"resume":
+			_on_resume()
 
 func _build_hud_legacy() -> void:
 	if hud == null:
@@ -650,7 +666,6 @@ func _build_tool_selection_panel() -> void:
 			var id := str(definition.get("id", ""))
 			var card := _button_in(build_selection_panel, Vector2(30 + (index % 3) * 174, 226 + (index / 3) * 54), Vector2(164, 48), "")
 			card.name = "FacilityBuildCard_%s" % id
-			card.pressed.connect(_select_facility_for_build.bind(id))
 			var icon := _icon(Vector2(8, 7), Vector2(16, 16), Assets.building_icon(str(definition.get("icon", id))), card)
 			icon.name = "Icon"
 			var name_label := _label_in(card, Vector2(30, 4), Vector2(126, 16), str(definition.get("name", id)), 3, TEXT_ACCENT)
@@ -662,15 +677,12 @@ func _build_tool_selection_panel() -> void:
 	var facility_button := _button_in(build_selection_panel, Vector2(30, 400), Vector2(210, 32), "进入设施建造")
 	facility_button.name = "FacilityBuildButton"
 	facility_button.tooltip_text = "选择并放置营地设施"
-	facility_button.pressed.connect(_enter_facility_build_mode)
 	crafting_open_button = _button_in(build_selection_panel, Vector2(252, 400), Vector2(150, 32), "用品制作")
 	crafting_open_button.name = "CraftingOpenButton"
 	crafting_open_button.tooltip_text = "制作绷带、火把或陷阱"
-	crafting_open_button.pressed.connect(_open_crafting_panel)
 	var close := _button_in(build_selection_panel, Vector2(414, 400), Vector2(150, 32), "关闭")
 	close.name = "BuildSelectionCloseButton"
 	close.tooltip_text = "关闭建造选择"
-	close.pressed.connect(_close_build_selection)
 	build_selection_dim.visible = false
 	build_selection_panel.visible = false
 
@@ -683,7 +695,6 @@ func _build_crafting_panel() -> void:
 	crafting_hint = _label_in(crafting_panel, Vector2(24, 48), Vector2(438, 21), "需要简易工作台", 5, TEXT_MUTED)
 	var close := _button_in(crafting_panel, Vector2(372, 16), Vector2(90, 30), "关闭")
 	close.name = "CraftingCloseButton"
-	close.pressed.connect(close_crafting_panel)
 	for index in range(["bandage", "torch", "trap"].size()):
 		var recipe_id: String = ["bandage", "torch", "trap"][index]
 		var row := _panel(Vector2(24, 81 + index * 78), Vector2(438, 63), PANEL_LIGHT, crafting_panel)
@@ -694,7 +705,6 @@ func _build_crafting_panel() -> void:
 		var cost_label := _label_in(row, Vector2(58, 34), Vector2(220, 18), "", 4, TEXT_MUTED)
 		var craft_button := _button_in(row, Vector2(316, 15), Vector2(108, 33), "制作")
 		craft_button.name = "CraftButton"
-		craft_button.pressed.connect(_craft_recipe.bind(recipe_id))
 		recipe_buttons[recipe_id] = craft_button
 		crafting_rows[recipe_id] = {"name":name_label, "cost":cost_label, "button":craft_button}
 	crafting_panel.visible = false
@@ -703,7 +713,6 @@ func _build_tool_card(tool_id: String, label_text: String, icon_texture: Texture
 	var card := _button_in(build_selection_panel, pos, Vector2(210, 138), "")
 	card.name = "BuildToolButton_%s" % tool_id
 	card.tooltip_text = "制作%s" % label_text
-	card.pressed.connect(_select_tool_and_craft.bind(tool_id))
 	var icon := _icon(Vector2(97, 10), Vector2(16, 16), icon_texture, card)
 	icon.name = "Icon"
 	var name_label := _label_in(card, Vector2(12, 38), Vector2(186, 20), label_text, 6, TEXT_ACCENT)
@@ -779,6 +788,7 @@ func _open_build_selection() -> void:
 		world.build_mode.active = false
 	_build_selection_open = true
 	_open_pause_overlay("build_selection")
+	if build_view != null: build_view.open({})
 	_refresh_build_selection()
 	refresh()
 
@@ -787,6 +797,7 @@ func _close_build_selection() -> void:
 		return
 	_build_selection_open = false
 	_close_pause_overlay("build_selection")
+	if build_view != null: build_view.close()
 	refresh()
 
 func _select_tool_and_craft(tool_id: String) -> void:
@@ -831,16 +842,15 @@ func _build_pause_panel() -> void:
 	var hint := _label_in(pause_panel, Vector2(27, 60), Vector2(372, 27), "进度已冻结", 6, TEXT_MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var resume := _button_in(pause_panel, Vector2(33, 102), Vector2(360, 42), "继续游戏")
-	resume.pressed.connect(_on_resume)
+	resume.name = "PauseResumeButton"
 	var save := _button_in(pause_panel, Vector2(33, 153), Vector2(174, 42), "保存")
-	save.pressed.connect(save_game)
+	save.name = "PauseSaveButton"
 	var load := _button_in(pause_panel, Vector2(219, 153), Vector2(174, 42), "读取")
-	load.pressed.connect(load_game)
+	load.name = "PauseLoadButton"
 	var build := _button_in(pause_panel, Vector2(33, 207), Vector2(360, 42), "返回探索")
-	build.pressed.connect(_on_resume)
+	build.name = "PauseExploreButton"
 	exit_button = _button_in(pause_panel, Vector2(33, 261), Vector2(360, 42), "退出游戏")
 	exit_button.tooltip_text = "退出游戏"
-	exit_button.pressed.connect(exit_game)
 	var close := _label_in(pause_panel, Vector2(27, 324), Vector2(372, 27), "Esc 关闭 · F5 保存 · F9 读取", 5, TEXT_MUTED)
 	close.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	pause_dim.visible = false
@@ -853,7 +863,6 @@ func _build_backpack_panel() -> void:
 	backpack_panel.z_index = 20
 	_label_in(backpack_panel, Vector2(30, 21), Vector2(390, 33), "背包", 10, TEXT_ACCENT)
 	backpack_close_button = _button_in(backpack_panel, Vector2(489, 18), Vector2(102, 36), "关闭")
-	backpack_close_button.pressed.connect(close_backpack)
 	backpack_content_label = _label_in(backpack_panel, Vector2(30, 57), Vector2(552, 24), "", 6, TEXT_MUTED)
 	backpack_content_label.clip_text = true
 	for index in range(ResourceManager.BACKPACK_BASE_CAPACITY):
@@ -929,7 +938,6 @@ func _build_storage_panel() -> void:
 	_label_in(storage_panel, Vector2(24, 18), Vector2(520, 33), "储物架", 10, TEXT_ACCENT)
 	storage_capacity_label = _label_in(storage_panel, Vector2(24, 48), Vector2(720, 24), "", 6, TEXT_MUTED)
 	storage_close_button = _button_in(storage_panel, Vector2(792, 18), Vector2(96, 33), "关闭")
-	storage_close_button.pressed.connect(close_storage)
 	storage_grid_panel = _panel(Vector2(18, 84), Vector2(414, 372), PANEL_LIGHT, storage_panel)
 	storage_grid_panel.name = "StorageGrid"
 	storage_grid_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1049,7 +1057,6 @@ func _build_event_panel() -> void:
 	for index in range(2):
 		var choice := _button_in(event_panel, Vector2(42, 166 + index * 72), Vector2(522, 54), "")
 		choice.name = "EventChoice%d" % index
-		choice.pressed.connect(_on_event_choice.bind(index))
 		event_choice_buttons.append(choice)
 	event_panel.visible = false
 
@@ -1060,6 +1067,7 @@ func _build_report_panel() -> void:
 	report_panel.z_index = 36
 	_label_in(report_panel, Vector2(30, 24), Vector2(546, 30), "夜间报告", 9, TEXT_ACCENT).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	report_content_label = _label_in(report_panel, Vector2(42, 72), Vector2(522, 210), "", 5, TEXT_MAIN)
+	report_content_label.name = "ReportContent"
 	report_content_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	report_content_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	report_content_label.clip_text = true
@@ -1124,6 +1132,7 @@ func show_event(event: Dictionary) -> void:
 	_report_open = false
 	_close_pause_overlay("report")
 	_open_pause_overlay("event")
+	if event_report_view != null: event_report_view.open({"mode":"event"})
 	var data: Dictionary = event.get("data", {}) if event.get("data", {}) is Dictionary else {}
 	event_title_label.text = str(data.get("title", "夜间事件"))
 	event_body_label.text = str(data.get("text", "夜里发生了一些事情。"))
@@ -1148,6 +1157,7 @@ func show_report(lines: Array[String], terminal: bool = false) -> void:
 	_event_open = false
 	_close_pause_overlay("event")
 	_open_pause_overlay("report")
+	if event_report_view != null: event_report_view.open({"mode":"report", "content":"\n".join(lines)})
 	report_content_label.text = "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
 	report_continue_button.text = "结束游戏" if terminal else "进入清晨"
 	report_continue_button.disabled = terminal
@@ -1294,6 +1304,12 @@ func _update_buttons() -> void:
 		storage_panel.visible = _storage_open
 	if crafting_panel != null:
 		crafting_panel.visible = _crafting_open
+	if backpack_view != null: backpack_view.refresh({})
+	if storage_view != null: storage_view.refresh({})
+	if crafting_view != null: crafting_view.refresh({})
+	if build_view != null: build_view.refresh({})
+	if pause_overlay != null: pause_overlay.refresh({})
+	if event_report_view != null and not (_event_open or _report_open): event_report_view.close()
 	if build_button != null:
 		build_button.disabled = inside or world == null or world.build_mode == null
 		build_button.text = ""
@@ -1355,9 +1371,11 @@ func _refresh_phase_overlay() -> void:
 			if _event_open:
 				_event_open = false
 				_close_pause_overlay("event")
+				if event_report_view != null: event_report_view.close()
 			if _report_open:
 				_report_open = false
 				_close_pause_overlay("report")
+				if event_report_view != null: event_report_view.close()
 
 func toggle_backpack() -> void:
 	if _event_open or _report_open:
@@ -1370,17 +1388,20 @@ func toggle_backpack() -> void:
 	_close_standard_overlays()
 	_backpack_open = true
 	_open_pause_overlay("backpack")
+	if backpack_view != null: backpack_view.open({})
 	refresh()
 
 func close_backpack() -> void:
 	_backpack_open = false
 	_close_backpack_context_menus()
+	if backpack_view != null: backpack_view.close()
 	_close_pause_overlay("backpack")
 	refresh()
 
 func close_storage() -> void:
 	_storage_open = false
 	_close_pause_overlay("storage")
+	if storage_view != null: storage_view.close()
 	refresh()
 
 func close_overlay() -> bool:
@@ -1412,6 +1433,7 @@ func _on_storage_open_requested() -> void:
 	_close_standard_overlays()
 	_storage_open = true
 	_open_pause_overlay("storage")
+	if storage_view != null: storage_view.open({})
 	refresh()
 
 func _refresh_backpack_panel() -> void:
@@ -1563,11 +1585,13 @@ func _open_crafting_panel() -> void:
 	_close_standard_overlays()
 	_crafting_open = true
 	_open_pause_overlay("crafting")
+	if crafting_view != null: crafting_view.open({})
 	refresh()
 
 func close_crafting_panel() -> void:
 	_crafting_open = false
 	_close_pause_overlay("crafting")
+	if crafting_view != null: crafting_view.close()
 	refresh()
 
 func _storage_take(key: String) -> void:

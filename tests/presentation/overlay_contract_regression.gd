@@ -19,8 +19,16 @@ func _init() -> void:
 		view.setup(host, null, {})
 		view.open({"items": [], "capacity": 12, "storage": [], "backpack": [], "recipes": {}, "tools": {}, "choices": []})
 		assert(view.is_open())
-		view.refresh({"items": [], "capacity": 12, "storage": [], "backpack": [], "recipes": {}, "tools": {}, "choices": []})
-		var button := _first_button(view.panel)
+		var snapshot := {"items": [{"key":"food", "label":"食物"}], "capacity": 12, "storage": [{"key":"wood", "label":"木材"}], "backpack": [{"key":"wood", "label":"木材"}], "workbench_ready": true, "recipes": {"bandage":{"can_craft":true}}, "tools": {"axe":{"can_craft":true}}, "choices": ["选择"]}
+		view.refresh(snapshot)
+		var button: Button
+		match Views.find(script):
+			0: button = _button_named(view.panel, "BackpackSlot0")
+			1: button = _button_named(view.panel, "StorageSlot0")
+			2: button = _button_named(view.panel, "CraftButton")
+			3: button = _button_named(view.panel, "BuildToolButton_axe")
+			4: button = _first_button(view.panel)
+			5: button = _button_with_text(view.panel, "保存")
 		if button != null:
 			button.emit_signal("pressed")
 			assert(intents.size() <= 1)
@@ -60,3 +68,19 @@ func _count_named_nodes(node: Node, target_name: String) -> int:
 	for child in node.get_children():
 		count += _count_named_nodes(child, target_name)
 	return count
+
+func _button_named(node: Node, target_name: String) -> Button:
+	if node == null: return null
+	if node.name == target_name and node is Button: return node as Button
+	for child in node.get_children():
+		var found := _button_named(child, target_name)
+		if found != null: return found
+	return null
+
+func _button_with_text(node: Node, value: String) -> Button:
+	if node == null: return null
+	if node is Button and (node as Button).text == value: return node as Button
+	for child in node.get_children():
+		var found := _button_with_text(child, value)
+		if found != null: return found
+	return null
