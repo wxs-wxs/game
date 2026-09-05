@@ -63,3 +63,37 @@ Output: `AUDIO_CATALOG_OK cues=48 validation_errors=0`, `EXIT=0`.
   audio replacement and gameplay call-site migration remain later tasks.
 - Verification here is headless. Non-headless crossfade timing and audible
   output still need the runtime acceptance pass after Autoload registration.
+
+## Review Fixes
+
+Fix commit: `3fe0df9` (`fix: harden audio pools and threat snapshots`)
+
+- Bound each active SFX decision to its actual player node. Reuse now requires
+  the correct spatial type, and every playback resets its bus, position,
+  `max_distance`, and pitch. Stealing stops and reclaims the selected node;
+  lowest-priority stealing only accepts a strictly lower-priority candidate.
+- Added high/critical/danger threat music selection (`exploration_threat`) and
+  a non-empty danger snapshot, with recovery when threat returns to low.
+- Added ambience fade-in/fade-out tweens with a documented `fade_seconds`
+  duration and safe no-tree/headless behavior.
+- Added a real `AudioListener2D` for non-headless spatial playback and applied
+  cue `max_distance` to `AudioStreamPlayer2D`.
+- Expanded the regression test for ConfigFile persistence, final silent
+  fallback, headless no-player creation, threat transitions, player routing,
+  actual oldest/priority stealing, spatial distance/position, double-buffer
+  music, and ambience layer transitions.
+
+Review-fix verification:
+
+```text
+AUDIO_SERVICE_OK buses=11 events=5 music=exploration_rain layers=3
+EXIT=0
+EDITOR_EXIT=0
+AUDIO_CATALOG_OK cues=48 validation_errors=0
+CATALOG_EXIT=0
+```
+
+The focused test completed without the previous invalid-playback errors or
+resource-leak warnings. The non-headless controller checks are safely forced
+through configuration paths in the headless test; audible output still needs
+the later runtime acceptance pass.
