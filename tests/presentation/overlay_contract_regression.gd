@@ -26,6 +26,19 @@ func _init() -> void:
 			assert(intents.size() <= 1)
 		view.close()
 		assert(not view.is_open())
+	var main := preload("res://scenes/Main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	var ui: UIController = main.ui
+	assert(ui.backpack_view.panel == ui.backpack_panel)
+	assert(ui.storage_view.panel == ui.storage_panel)
+	assert(ui.crafting_view.panel == ui.crafting_panel)
+	assert(ui.build_view.panel == ui.build_selection_panel)
+	assert(ui.event_report_view.panel == ui.event_panel)
+	assert(ui.pause_overlay.panel == ui.pause_panel)
+	for node_name in ["BackpackPanel", "StoragePanel", "CraftingPanel", "BuildSelectionPanel", "PausePanel"]:
+		assert(_count_named_nodes(ui.hud, node_name) == 1, node_name + " duplicated")
 	print("OVERLAY_CONTRACT_REGRESSION_OK")
 	quit()
 
@@ -40,3 +53,10 @@ func _first_button(node: Node) -> Button:
 			return nested
 	return null
 
+func _count_named_nodes(node: Node, target_name: String) -> int:
+	if node == null:
+		return 0
+	var count := 1 if node.name == target_name else 0
+	for child in node.get_children():
+		count += _count_named_nodes(child, target_name)
+	return count
