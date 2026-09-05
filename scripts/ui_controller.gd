@@ -115,10 +115,22 @@ var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
 const UiFactory := preload("res://scripts/presentation/theme/ui_factory.gd")
 const HudView := preload("res://scripts/presentation/hud/hud_view.gd")
+const BackpackView := preload("res://scripts/presentation/overlays/backpack_view.gd")
+const StorageView := preload("res://scripts/presentation/overlays/storage_view.gd")
+const CraftingView := preload("res://scripts/presentation/overlays/crafting_view.gd")
+const BuildView := preload("res://scripts/presentation/overlays/build_view.gd")
+const EventReportView := preload("res://scripts/presentation/overlays/event_report_view.gd")
+const PauseOverlay := preload("res://scripts/presentation/overlays/pause_overlay.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
 const StorageTransferSlotClass := preload("res://scripts/storage_transfer_slot.gd")
 var _ui_factory: UiFactory
 var hud_view: HudView
+var backpack_view: BackpackView
+var storage_view: StorageView
+var crafting_view: CraftingView
+var build_view: BuildView
+var event_report_view: EventReportView
+var pause_overlay: PauseOverlay
 
 # All values below are authored directly in the 960x540 logical viewport.
 const VIEW_SIZE := Vector2(960, 540)
@@ -271,6 +283,12 @@ func _clear_hud() -> void:
 	log_panel = null
 	log_content_label = null
 	log_close_button = null
+	backpack_view = null
+	storage_view = null
+	crafting_view = null
+	build_view = null
+	event_report_view = null
+	pause_overlay = null
 	_resource_icons.clear()
 	_rail_icons.clear()
 
@@ -368,6 +386,60 @@ func _build_hud() -> void:
 	_build_log_panel()
 	_build_event_panel()
 	_build_report_panel()
+	_setup_overlay_views()
+
+func _setup_overlay_views() -> void:
+	if hud == null:
+		return
+	backpack_view = BackpackView.new()
+	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel})
+	storage_view = StorageView.new()
+	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel})
+	crafting_view = CraftingView.new()
+	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel})
+	build_view = BuildView.new()
+	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel})
+	event_report_view = EventReportView.new()
+	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel})
+	pause_overlay = PauseOverlay.new()
+	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel})
+	for view in [backpack_view, storage_view, crafting_view, build_view, event_report_view, pause_overlay]:
+		if not view.intent_requested.is_connected(dispatch_intent):
+			view.intent_requested.connect(dispatch_intent)
+		if not view.close_requested.is_connected(_on_child_overlay_close):
+			view.close_requested.connect(_on_child_overlay_close)
+
+func _on_child_overlay_close() -> void:
+	close_overlay()
+
+func dispatch_intent(intent: Dictionary) -> void:
+	var kind := str(intent.get("kind", ""))
+	match kind:
+		"use_item":
+			var item_key := str(intent.get("key", ""))
+			if not item_key.is_empty() and game != null:
+				var result: Dictionary = game.use_item(item_key)
+				_show_message(str(result.get("reason", "物品未使用。")), 2.5)
+				refresh()
+		"storage_move":
+			var transfer_key := str(intent.get("key", ""))
+			if transfer_key.is_empty() or game == null or game.resources == null:
+				return
+			var result: Dictionary = game.resources.move_to_storage(transfer_key, 1) if str(intent.get("source", "")) == "backpack" else game.resources.move_to_backpack(transfer_key, 1)
+			_show_message(str(result.get("reason", "物品未转移。")), 1.5)
+			refresh()
+		"craft_recipe":
+			_craft_recipe(str(intent.get("recipe", "")))
+		"craft_tool":
+			_select_tool_and_craft(str(intent.get("tool", "")))
+		"choose_event":
+			_on_event_choice(int(intent.get("index", -1)))
+		"save_game":
+			save_game()
+		"load_game":
+			load_game()
+		"exit_game":
+			exit_game()
 
 func _build_hud_legacy() -> void:
 	if hud == null:
