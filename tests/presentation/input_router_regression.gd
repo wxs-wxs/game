@@ -35,6 +35,10 @@ func _init() -> void:
 	assert(escape_world.get("payload", {}).get("scope", "") == "world")
 	var escape_pause := router.route(_key(KEY_ESCAPE), closed)
 	assert(escape_pause.get("kind", "") == "pause")
+	var right_click := InputEventMouseButton.new()
+	right_click.button_index = MOUSE_BUTTON_RIGHT
+	right_click.pressed = true
+	assert(not bool(router.route(right_click, {"overlay_open":true}).get("handled", false)))
 
 	var space := router.route(_key(KEY_SPACE), closed)
 	assert(space.get("kind", "") == "pause")
