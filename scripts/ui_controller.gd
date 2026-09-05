@@ -355,6 +355,10 @@ func _build_hud() -> void:
 		interact_button.pressed.connect(_on_interact_pressed)
 	if shortcut_button != null and not shortcut_button.pressed.is_connected(_toggle_shortcut_panel):
 		shortcut_button.pressed.connect(_toggle_shortcut_panel)
+	if hud_view.objective_log_button != null and not hud_view.objective_log_button.pressed.is_connected(toggle_log_panel):
+		hud_view.objective_log_button.pressed.connect(toggle_log_panel)
+	if hud_view.objective_shortcut_button != null and not hud_view.objective_shortcut_button.pressed.is_connected(_toggle_shortcut_panel):
+		hud_view.objective_shortcut_button.pressed.connect(_toggle_shortcut_panel)
 	_build_tool_selection_panel()
 	_build_pause_panel()
 	_build_backpack_panel()

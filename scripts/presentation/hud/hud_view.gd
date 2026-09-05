@@ -31,6 +31,8 @@ var objective_panel: Panel
 var objective_live_label: Label
 var objective_reward_label: Label
 var objective_log_label: Label
+var objective_log_button: Button
+var objective_shortcut_button: Button
 var prompt_panel: Panel
 var prompt_label: Label
 var interact_button: Button
@@ -137,12 +139,6 @@ func refresh(snapshot: Dictionary) -> void:
 	objective_live_label.clip_text = true
 	objective_reward_label.clip_text = true
 	objective_log_label.clip_text = true
-	var objective_log_button := factory.button(objective_panel, Vector2.ZERO, Vector2.ZERO, "日志")
-	objective_log_button.visible = false
-	objective_log_button.name = "ObjectiveLogButton"
-	var objective_shortcut_button := factory.button(objective_panel, Vector2.ZERO, Vector2.ZERO, "快捷")
-	objective_shortcut_button.visible = false
-	objective_shortcut_button.name = "ObjectiveShortcutButton"
 	var lines: Array = snapshot.get("log", [])
 	objective_log_label.text = str(lines.back()) if not lines.is_empty() else ""
 	var interaction: Dictionary = snapshot.get("interaction", {})
@@ -221,6 +217,14 @@ func _build() -> void:
 	objective_reward_label.clip_text = true
 	objective_log_label = factory.label(objective_panel, Vector2(12, 40), Vector2(222, 14), "", 3, PixelTheme.TEXT_MAIN)
 	objective_log_label.clip_text = true
+	objective_log_button = factory.button(objective_panel, Vector2.ZERO, Vector2.ZERO, "日志")
+	objective_log_button.visible = false
+	objective_log_button.name = "ObjectiveLogButton"
+	objective_log_button.tooltip_text = "查看最近日志"
+	objective_shortcut_button = factory.button(objective_panel, Vector2.ZERO, Vector2.ZERO, "快捷")
+	objective_shortcut_button.visible = false
+	objective_shortcut_button.name = "ObjectiveShortcutButton"
+	objective_shortcut_button.tooltip_text = "查看快捷键"
 	prompt_panel = factory.panel(root, Vector2(300, 432), Vector2(360, 26), PixelTheme.PANEL_DARK)
 	prompt_panel.name = "PromptPanel"
 	prompt_label = factory.label(prompt_panel, Vector2(9, 4), Vector2(210, 18), "", 3, PixelTheme.TEXT_ACCENT)
