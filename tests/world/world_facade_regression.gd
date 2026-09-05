@@ -30,8 +30,22 @@ func _run() -> void:
 	assert(outside_door.get_parent() == world)
 
 	var signal_names: Array[String] = []
+	var expected_signal_args := {
+		"interaction_changed": ["prompt"],
+		"interaction_result": ["message"],
+		"interaction_progress_changed": ["name", "progress"],
+		"storage_open_requested": [],
+		"tool_selection_requested": []
+	}
 	for signal_info in world.get_signal_list():
-		signal_names.append(str(signal_info.get("name", "")))
+		var signal_name := str(signal_info.get("name", ""))
+		signal_names.append(signal_name)
+		if expected_signal_args.has(signal_name):
+			var args: Array = signal_info.get("args", [])
+			var expected_args: Array = expected_signal_args[signal_name]
+			assert(args.size() == expected_args.size())
+			for index in range(expected_args.size()):
+				assert(str(args[index].get("name", "")) == expected_args[index])
 	for expected_signal in ["interaction_changed", "interaction_result", "interaction_progress_changed", "storage_open_requested", "tool_selection_requested"]:
 		assert(signal_names.has(expected_signal))
 
@@ -47,6 +61,7 @@ func _run() -> void:
 	assert(outside_door.unique_id == "house_door")
 	assert(not world.is_inside)
 	var outdoor_bounds := world.get_player_bounds()
+	assert(outdoor_bounds == Rect2(12, 12, 1896, 1056))
 	assert(outdoor_bounds.has_point(world.player.global_position))
 
 	world.player.global_position = ExplorationWorld.HOUSE_DOOR_OUTSIDE_POSITION
@@ -59,7 +74,7 @@ func _run() -> void:
 	assert(world.player.interior)
 	assert(world.interior_manager.interior != null)
 	var indoor_bounds := world.get_player_bounds()
-	assert(indoor_bounds.size.x > 0.0)
+	assert(indoor_bounds == Rect2(2416, 17, 148, 146))
 	assert(indoor_bounds.has_point(world.player.global_position))
 	var inside_door := world.interior_manager.interior.door as HouseDoor
 	assert(inside_door != null)

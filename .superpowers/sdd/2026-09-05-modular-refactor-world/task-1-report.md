@@ -62,3 +62,38 @@ WORLD_FACADE_REGRESSION_OK map=(1920.0, 1080.0) interior_offset=(2400.0, 0.0) ou
   node names. The characterization should then retain the current type/array
   checks while adding compatibility assertions for those names if they become
   part of the public facade.
+
+## Fix round 1
+
+The characterization test was strengthened to lock the observed bounds and
+signal signatures.
+
+Commands and results:
+
+```powershell
+& 'C:\projects\game\.tools\godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . --script res://tests/world/world_facade_regression.gd --quit-after 10
+```
+
+Exit code: `0`
+
+```text
+WORLD_FACADE_REGRESSION_OK map=(1920.0, 1080.0) interior_offset=(2400.0, 0.0) outside_bounds=[P: (12.0, 12.0), S: (1896.0, 1056.0)] points=55 signals=22 nodes=Player,HouseDoor(type),InteractionPoints(array)
+```
+
+The test now asserts outdoor bounds `Rect2(12, 12, 1896, 1056)` and indoor
+bounds `Rect2(2416, 17, 148, 146)` before and after the real door transition.
+It also validates signal argument counts and names: `prompt`; `message`;
+`name`, `progress`; and no arguments for each storage/tool request signal.
+
+Parser check:
+
+```powershell
+& 'C:\projects\game\.tools\godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . --editor --quit
+```
+
+Exit code: `0`.
+
+`git diff --check` exit code: `0`.
+
+The same existing headless cleanup warnings remain (43 ObjectDB instances and
+19 resources), with no effect on the successful exit code or marker.
