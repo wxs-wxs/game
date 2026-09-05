@@ -206,6 +206,7 @@ func _run() -> void:
 	survival_game.get_protagonist().body_temperature = 34.0
 	survival_game._update_temperature(1.0)
 	assert(_has_event(audio, "survival.temperature_warning"))
+	assert(_has_event(audio, "player.cold_warning"))
 	survival_game.resources.amounts["food"] = 0
 	survival_game._night_settlement()
 	assert(_has_event(audio, "survival.food_warning"))

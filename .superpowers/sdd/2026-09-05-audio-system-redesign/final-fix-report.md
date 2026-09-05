@@ -82,3 +82,36 @@ success.
 - The non-headless loop/listener assertions exercise controller construction in
   the headless test process; audible output still requires a normal desktop
   session for final listening QA.
+
+## Scoped Re-review Fix
+
+The cold path now emits `player.cold_warning` alongside
+`survival.temperature_warning` when body temperature is below the existing
+damage threshold. The catalog cue's existing cooldown and instance limits
+continue to suppress repeated playback; temperature simulation and gameplay
+randomness are unchanged.
+
+Commands and exact results:
+
+```powershell
+.\tools\run_audio_regressions.ps1
+```
+
+Output: `AUDIO_CATALOG_OK cues=48 validation_errors=0`,
+`AUDIO_SERVICE_OK buses=11 events=6 music=exploration_rain layers=3`,
+`AUDIO_SAVE_OK legacy=3 omitted_audio=true persistence=true safe_missing=true`,
+`AUDIO_GAMEPLAY_REGRESSION_OK`, and `AUDIO_TESTS_OK count=4`.
+
+```powershell
+& 'C:\projects\game\.tools\godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . --script res://tests/smoke.gd --quit-after 8
+```
+
+Output: `SMOKE_OK audio_events=19 indoor=false build_xp=0`, exit code `0`.
+The known ObjectDB/resource-leak warnings were unchanged.
+
+```powershell
+& 'C:\projects\game\.tools\godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . --editor --quit
+```
+
+Output: editor scan completed with exit code `0`; no parse or script-load
+errors.

@@ -473,6 +473,7 @@ func _update_temperature(simulation_seconds: float) -> void:
 	hero.body_temperature = clampf(hero.body_temperature + (target - hero.body_temperature) * response * simulation_seconds, -50.0, NORMAL_BODY_TEMPERATURE_C)
 	if hero.body_temperature < BODY_TEMPERATURE_DAMAGE_THRESHOLD_C:
 		_emit_audio("survival.temperature_warning", {"body_temperature": hero.body_temperature})
+		_emit_audio("player.cold_warning", {"body_temperature": hero.body_temperature})
 		hero.temperature_damage_accumulator += simulation_seconds
 		while hero.temperature_damage_accumulator >= BODY_TEMPERATURE_DAMAGE_INTERVAL:
 			hero.temperature_damage_accumulator -= BODY_TEMPERATURE_DAMAGE_INTERVAL
