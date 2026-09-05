@@ -48,23 +48,31 @@ func resolve(context: Dictionary) -> Dictionary:
 	var result: Dictionary = settle(context)
 	if str(result.get("phase", "")) == "error":
 		return result
-	if bool(result.get("health_depleted", false)):
-		result["phase"] = "ended"
-		result["audio_events"].append({"id": "player.death", "params": {}})
-		result["audio_events"].append({"id": "game.over", "params": {}})
-		return result
+	var report_lines: Array = result.get("report_lines", []).duplicate(true)
+	var night_context: Dictionary = result.get("night_context", {}).duplicate(true)
+	var no_food_days := int(result.get("no_food_days", 0))
+	var health_depleted := bool(result.get("health_depleted", false))
+	var phase := str(result.get("phase", "report"))
+	var event: Dictionary = {}
+	var audio_events: Array[Dictionary] = []
+	for item in result.get("audio_events", []):
+		if item is Dictionary:
+			audio_events.append(item.duplicate(true))
+	if health_depleted:
+		phase = "ended"
+		audio_events.append({"id": "player.death", "params": {}})
+		audio_events.append({"id": "game.over", "params": {}})
+		return {"report_lines": report_lines, "phase": phase, "event": event, "health_depleted": health_depleted, "night_context": night_context, "audio_events": audio_events, "no_food_days": no_food_days}
 	var events = context.get("events")
 	var rng = context.get("rng")
-	var event: Dictionary = {}
 	if events != null and rng != null and events.has_method("create_weighted_event"):
 		var event_context := _event_context(str(context.get("weather", "晴朗")), context.get("buildings"), context.get("survival"))
 		event = events.create_weighted_event(rng, event_context)
 		if not event.is_empty():
-			result["phase"] = "event"
-			result["event"] = event
-			result["audio_events"].append({"id": "event.reveal", "params": {"event_id": str(event.get("id", ""))}})
-	result["audio_events"].append({"id": "night.report", "params": {}})
-	return result
+			phase = "event"
+			audio_events.append({"id": "event.reveal", "params": {"event_id": str(event.get("id", ""))}})
+	audio_events.append({"id": "night.report", "params": {}})
+	return {"report_lines": report_lines, "phase": phase, "event": event, "health_depleted": health_depleted, "night_context": night_context, "audio_events": audio_events, "no_food_days": no_food_days}
 
 func settle(context: Dictionary) -> Dictionary:
 	var contract_error := _validate_context(context)
