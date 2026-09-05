@@ -11,6 +11,7 @@ func _init() -> void:
 	# and usable after the room is created.
 	var build = world.build_mode
 	build.toggle()
+	var requested_position: Vector2 = build.ghost_position
 	assert(build.confirm_build())
 	for _step in range(6):
 		build.site._process(1.0)
@@ -21,6 +22,7 @@ func _init() -> void:
 		if point.unique_id == "storage_shelf_outdoor":
 			outdoor_shelf = point
 	assert(outdoor_shelf != null)
+	assert(outdoor_shelf.global_position == requested_position, "completed shelf must stay at the requested build position")
 	world.player.global_position = outdoor_shelf.global_position
 	world._process(0.1)
 	assert(world.nearest == outdoor_shelf)

@@ -42,7 +42,7 @@ func _init() -> void:
 	assert(result.has("fish_key"))
 	var fish_key := str(result.get("fish_key"))
 	assert(game.resources.backpack.get(fish_key, 0) == 1)
-	var processed := game.resources.convert_fish_to_food(fish_key)
+	var processed := game.resources.cook_fish(fish_key)
 	assert(processed.get("ok", false))
 	assert(game.resources.backpack.get(fish_key, 0) == 0)
 	assert(game.resources.backpack.get(str(processed.get("cooked_key", "")), 0) == 1)
@@ -52,7 +52,7 @@ func _init() -> void:
 	game.resources.backpack["wood"] = 1
 	game.resources.backpack["stone"] = 1
 	game.resources.backpack["fiber"] = 1
-	var full_convert := game.resources.convert_fish_to_food("fish_carp")
+	var full_convert := game.resources.cook_fish("fish_carp")
 	assert(full_convert.get("ok", false))
 
 	# Storage transfer accepts a new item type while an existing stack occupies
@@ -82,16 +82,15 @@ func _init() -> void:
 	ruin.failure_chance = 0.0
 	ruin.setup(game)
 	for key in ResourceManager.ITEM_KEYS: game.resources.backpack[key] = 0
-	game.resources.backpack["food"] = 1
-	game.resources.backpack["wood"] = 1
-	game.resources.backpack["stone"] = 1
+	var occupied_keys := ["food", "wood", "stone", "fiber", "cloth", "water", "fish_carp", "fish_bass", "fish_trout", "fish_eel", "cooked_food", "bandage"]
+	for key in occupied_keys: game.resources.backpack[key] = 1
 	var metal_before := game.resources.get_amount("metal")
 	assert(ruin.interact().get("started", false))
 	var blocked_result := ruin.tick_interaction(ruin.interaction_time + 0.1)
 	assert(blocked_result.get("failed", false))
 	assert(game.resources.get_amount("metal") == metal_before)
-	game.resources.backpack_owned = true
-	game.resources.backpack_capacity = ResourceManager.BACKPACK_UPGRADED_CAPACITY
+	game.resources.backpack["wood"] = 0
+	game.resources.backpack["fiber"] = 0
 	assert(ruin.interact().get("started", false))
 	ruin.tick_interaction(ruin.interaction_time + 0.1)
 	assert(game.resources.get_amount("metal") > metal_before)

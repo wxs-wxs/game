@@ -77,14 +77,31 @@ func available(skill_level: int) -> Array[String]:
 func start_project(building_id: String, resources: ResourceManager, skill_level: int = 99) -> Dictionary:
 	return start_unified_project(building_id, Vector2.ZERO, resources, skill_level)
 
-func start_unified_project(building_id: String, position: Vector2, resources: ResourceManager, skill_level: int) -> Dictionary:
-	if built.has(building_id): return {"ok":false, "reason":"设施已经建成"}
-	if not active_project.is_empty(): return {"ok":false, "reason":"已有建造项目"}
+func construction_preflight(building_id: String, resources: ResourceManager, skill_level: int = 99) -> Dictionary:
 	var definition := get_definition(building_id)
-	if definition.is_empty(): return {"ok":false, "reason":"未知设施"}
-	if not is_unlocked(building_id, skill_level): return {"ok":false, "reason":"技能等级不足或设施尚未解锁"}
+	if definition.is_empty():
+		return {"ok":false, "reason":"未知设施"}
+	if built.has(building_id):
+		return {"ok":false, "reason":"设施已经建成"}
+	if not active_project.is_empty():
+		var active_id := str(active_project.get("id", ""))
+		var active_name := str(get_definition(active_id).get("name", active_id))
+		return {"ok":false, "reason":"已有建造项目：%s" % active_name}
+	if not is_unlocked(building_id, skill_level):
+		return {"ok":false, "reason":"技能等级不足或设施尚未解锁"}
+	if resources == null:
+		return {"ok":false, "reason":"资源系统未就绪"}
 	var cost: Dictionary = definition.get("cost", {}).duplicate(true)
-	if not resources.can_afford(cost): return {"ok":false, "reason":resources.missing_cost_text(cost)}
+	if not resources.can_afford(cost):
+		return {"ok":false, "reason":resources.missing_cost_text(cost)}
+	return {"ok":true, "reason":"可以开始建造", "definition":definition, "cost":cost}
+
+func start_unified_project(building_id: String, position: Vector2, resources: ResourceManager, skill_level: int) -> Dictionary:
+	var preflight := construction_preflight(building_id, resources, skill_level)
+	if not bool(preflight.get("ok", false)):
+		return {"ok":false, "reason":str(preflight.get("reason", "无法建造"))}
+	var definition: Dictionary = preflight.get("definition", {})
+	var cost: Dictionary = preflight.get("cost", {}).duplicate(true)
 	if not resources.spend(cost): return {"ok":false, "reason":"材料扣除失败"}
 	var duration := maxf(0.5, float(definition.get("build_time", definition.get("work", 1.0))))
 	var required := duration * (1.0 - 0.05 * float(maxi(1, skill_level) - 1))

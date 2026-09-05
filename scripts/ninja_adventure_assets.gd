@@ -44,3 +44,30 @@ static func landmark_icon(key: String) -> Texture2D:
 		"chest": return texture("res://assets/art/ninja_adventure/Items/Treasure/BigTreasureChest.png")
 		"fire": return region("res://assets/art/ninja_adventure/FX/Particle/Fire.png", Rect2(0, 0, 16, 12))
 	return resource_icon(key)
+
+## Facility cards reuse recognizable sprites from the same CC0 pack instead
+## of mixing unrelated icon families into one construction panel.
+static func building_icon(key: String) -> Texture2D:
+	const FIRE_SHEET := "res://assets/art/ninja_adventure/FX/Particle/Fire.png"
+	const BED_ATLAS := "res://assets/art/ninja_adventure/Backgrounds/Tilesets/tileset_bed.png"
+	const HOUSE_ATLAS := "res://assets/art/ninja_adventure/Backgrounds/Tilesets/TilesetHouse.png"
+	match key:
+		"campfire":
+			return region(FIRE_SHEET, Rect2(0, 0, 16, 12))
+		"bed":
+			return region(BED_ATLAS, Rect2(0, 0, 48, 32))
+		"shed":
+			return region(HOUSE_ATLAS, Rect2(0, 0, 64, 64))
+		"clinic":
+			return region(HOUSE_ATLAS, Rect2(336, 192, 16, 16))
+		"fence":
+			return region(HOUSE_ATLAS, Rect2(160, 80, 16, 16))
+		"storage_shelf":
+			return region(HOUSE_ATLAS, Rect2(352, 160, 48, 32))
+		"workbench":
+			return region(HOUSE_ATLAS, Rect2(224, 160, 48, 32))
+		"fire_basin":
+			return region(FIRE_SHEET, Rect2(48, 0, 16, 12))
+		"rain_collector":
+			return region(HOUSE_ATLAS, Rect2(464, 192, 32, 48))
+	return resource_icon("wood")

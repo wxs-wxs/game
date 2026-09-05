@@ -75,6 +75,7 @@ func _register_outdoor_shelf() -> void:
 		return
 	for point in world.interactions:
 		if is_instance_valid(point) and point.unique_id == "storage_shelf_outdoor":
+			point.position = position
 			return
 	var shelf = preload("res://scripts/storage_shelf_point.gd").new()
 	shelf.unique_id = "storage_shelf_outdoor"

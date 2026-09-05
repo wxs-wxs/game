@@ -127,10 +127,10 @@ HUD 和地图标签关闭字体抗锯齿与亚像素定位，保持中文像素�
 & ".\.tools\godot\Godot_v4.7.2-stable_win64_console.exe" --headless --path . --script res://tests/endless_acceptance_regression.gd --quit-after 15
 ```
 
-一次运行全部 30 个回归测试：
+一次运行全部 36 个回归测试：
 
 ```powershell
 .\tools\run_regressions.ps1
 ```
 
-脚本遇到第一个非零退出码就停止，全部完成时会输出 `ALL_TESTS_OK count=30`。Godot 退出时的 ObjectDB/resource-leak 提示是测试脚本退出清理提示，不代表测试断言失败；真正失败以解析错误、断言失败或非零退出码为准。
+脚本遇到第一个非零退出码就停止，全部完成时会输出 `ALL_TESTS_OK count=36`。Godot 退出时的 ObjectDB/resource-leak 提示是测试脚本退出清理提示，不代表测试断言失败；真正失败以解析错误、断言失败或非零退出码为准。

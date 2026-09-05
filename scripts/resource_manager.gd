@@ -7,10 +7,11 @@ const COOKED_FISH_KEYS := ["cooked_fish_carp", "cooked_fish_bass", "cooked_fish_
 const CRAFTED_ITEM_KEYS := ["cooked_food", "bandage", "torch", "trap"]
 const ITEM_KEYS := RESOURCE_KEYS + FISH_KEYS + COOKED_FISH_KEYS + CRAFTED_ITEM_KEYS
 const TOOL_KEYS := ["axe", "pickaxe"]
-const BACKPACK_BASE_CAPACITY := 4
-const BACKPACK_UPGRADED_CAPACITY := 12
+const BACKPACK_BASE_CAPACITY := 12
+## Kept as a read-only compatibility name for older callers. The backpack is
+## no longer upgradeable, so both legacy and current saves use 12 slots.
+const BACKPACK_UPGRADED_CAPACITY := BACKPACK_BASE_CAPACITY
 const STACK_MAX := 999
-const BACKPACK_COST := {"cloth": 2, "fiber": 4, "metal": 1}
 const FISH_DEFINITIONS := {
 	"fish_carp": {"label":"鲤鱼", "cooked_key":"cooked_fish_carp", "cooked_label":"熟鲤鱼", "food":2},
 	"fish_bass": {"label":"鲈鱼", "cooked_key":"cooked_fish_bass", "cooked_label":"熟鲈鱼", "food":3},
@@ -48,7 +49,6 @@ var total_collected: int = 0
 var tools: Dictionary = {"axe": false, "pickaxe": false}
 var backpack: Dictionary = {}
 var storage: Dictionary = {}
-var backpack_owned := false
 var backpack_capacity := BACKPACK_BASE_CAPACITY
 ## Standalone ResourceManager callers remain backwards compatible. GameManager
 ## explicitly disables this until its canonical workbench is completed.
@@ -265,11 +265,6 @@ func cook_fish(fish_key: String) -> Dictionary:
 	amounts[output_key] = int(amounts.get(output_key, 0)) + 1
 	return {"ok":true, "cooked_key":output_key, "reason":"已将%s烤成熟鱼。" % fish_name(fish_key)}
 
-## Compatibility wrapper for callers written before raw/cooked fish were
-## separated. It now produces a species-specific cooked fish item.
-func convert_fish_to_food(fish_key: String) -> Dictionary:
-	return cook_fish(fish_key)
-
 func cook_berries() -> Dictionary:
 	if int(backpack.get("food", 0)) <= 0: return {"ok":false, "reason":"背包中没有浆果。"}
 	if not _can_replace_with_item("food", "cooked_food"): return {"ok":false, "reason":"背包没有空间存放熟浆果。"}
@@ -297,19 +292,6 @@ func _remove_resource(key: String, amount: int) -> int:
 	amounts[key] = int(amounts.get(key, 0)) - removed
 	return removed
 
-func has_backpack() -> bool:
-	return backpack_owned
-
-func craft_backpack() -> Dictionary:
-	if backpack_owned:
-		return {"ok":false, "already_owned":true, "reason":"已经拥有背包。"}
-	if not can_afford(BACKPACK_COST):
-		return {"ok":false, "reason":missing_cost_text(BACKPACK_COST), "missing":missing_cost(BACKPACK_COST)}
-	spend(BACKPACK_COST)
-	backpack_owned = true
-	backpack_capacity = BACKPACK_UPGRADED_CAPACITY
-	return {"ok":true, "reason":"制作了背包，携带容量提升至 %d。" % backpack_capacity}
-
 func move_to_backpack(key: String, amount: int = 1) -> Dictionary:
 	var quantity := mini(maxi(0, amount), int(storage.get(key, 0)))
 	if quantity <= 0: return {"ok":false, "reason":"储物架中没有%s。" % display_name(key)}
@@ -331,6 +313,13 @@ func discard_from_storage(key: String, amount: int = 1) -> Dictionary:
 	storage[key] = int(storage.get(key, 0)) - quantity
 	if amounts.has(key): amounts[key] = maxi(0, int(amounts.get(key, 0)) - quantity)
 	return {"ok":true, "amount":quantity, "reason":"已丢弃%s%d。" % [display_name(key), quantity]}
+
+func discard_from_backpack(key: String, amount: int = 1) -> Dictionary:
+	var quantity := mini(maxi(0, amount), int(backpack.get(key, 0)))
+	if quantity <= 0: return {"ok":false, "reason":"背包中没有%s。" % display_name(key)}
+	backpack[key] = int(backpack.get(key, 0)) - quantity
+	if amounts.has(key): amounts[key] = maxi(0, int(amounts.get(key, 0)) - quantity)
+	return {"ok":true, "amount":quantity, "reason":"已从背包丢弃%s%d。" % [display_name(key), quantity]}
 
 func backpack_text() -> String:
 	var rows: Array[String] = []
@@ -456,7 +445,7 @@ func tools_text() -> String:
 	return "工具：" + ("、".join(owned) if not owned.is_empty() else "无")
 
 func to_dict() -> Dictionary:
-	return {"amounts":amounts, "capacities":capacities, "total_collected":total_collected, "tools":tools, "unlocked_tools":unlocked_tools, "backpack":backpack, "storage":storage, "backpack_owned":backpack_owned, "backpack_capacity":backpack_capacity, "workbench_available":workbench_available}
+	return {"amounts":amounts, "capacities":capacities, "total_collected":total_collected, "tools":tools, "unlocked_tools":unlocked_tools, "backpack":backpack, "storage":storage, "workbench_available":workbench_available}
 
 func from_dict(data: Dictionary) -> void:
 	var old_amounts: Dictionary = data.get("amounts", {})
@@ -472,9 +461,7 @@ func from_dict(data: Dictionary) -> void:
 		backpack[key] = maxi(0, int(saved_backpack.get(key, 0))) if saved_backpack is Dictionary else 0
 		var default_storage := int(amounts.get(key, 0)) if key in RESOURCE_KEYS else 0
 		storage[key] = maxi(0, int(saved_storage.get(key, default_storage))) if saved_storage is Dictionary else default_storage
-	backpack_owned = bool(data.get("backpack_owned", false))
-	backpack_capacity = BACKPACK_UPGRADED_CAPACITY if backpack_owned else BACKPACK_BASE_CAPACITY
-	if data.has("backpack_capacity"): backpack_capacity = maxi(BACKPACK_BASE_CAPACITY, int(data.get("backpack_capacity", backpack_capacity)))
+	backpack_capacity = BACKPACK_BASE_CAPACITY
 	workbench_available = bool(data.get("workbench_available", true))
 	total_collected = int(data.get("total_collected", 0))
 	# Old saves do not contain tool fields, so they cleanly start without tools

@@ -30,6 +30,13 @@
 - Icon family: Ninja Adventure 16px source sprites for every resource, tool,
   landmark, and inventory row. Destinations are 16px or 32px integer multiples
   and use nearest-neighbor filtering.
+- Construction card icons use the same CC0 family and are selected for the
+  building's actual function: Fire animation frames for campfire/fire basin,
+  the complete bed region for the bed, a complete house region for the storage
+  shed, the heart potion tile for the clinic, a real fence tile for the fence,
+  the shelf prop for storage_shelf, the tool bench prop for workbench, and the
+  stone well prop for rain_collector. Larger furniture regions are uniformly
+  reduced into the existing 16x16 card slot with nearest-neighbor filtering.
 - Palette: dark teal panels (`#101b1d`, `#18282a`), sage borders/text
   (`#78968a`, `#b6c6b5`), ember accent (`#f2ca72`, `#e58b6a`) and water/safe
   status (`#7eb8b8`, `#9dc77c`). This palette is implemented in

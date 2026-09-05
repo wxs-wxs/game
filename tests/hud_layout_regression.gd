@@ -56,19 +56,21 @@ func _init() -> void:
 		var facility_card: Button = ui.facility_buttons[facility_id]
 		assert(facility_card.position.x + facility_card.size.x <= ui.build_selection_panel.size.x)
 		assert(facility_card.position.y + facility_card.size.y <= ui.build_selection_panel.size.y)
-	for panel in [ui.backpack_panel, ui.fish_process_panel, ui.storage_panel, ui.shortcut_panel, ui.log_panel]:
+	for panel in [ui.backpack_panel, ui.storage_panel, ui.shortcut_panel, ui.log_panel, ui.discard_dialog]:
 		assert(panel != null)
 		assert(panel.scale == Vector2.ONE)
 		assert(panel.position.x >= 0 and panel.position.y >= 0)
 		assert(panel.position.x + panel.size.x <= ui.VIEW_SIZE.x)
 		assert(panel.position.y + panel.size.y <= ui.VIEW_SIZE.y)
-	assert(ui.backpack_craft_button.position.y + ui.backpack_craft_button.size.y <= ui.backpack_panel.size.y)
-	assert(ui.backpack_process_fish_button.position.y + ui.backpack_process_fish_button.size.y <= ui.backpack_panel.size.y)
-	assert(ui.backpack_cook_berries_button.position.y + ui.backpack_cook_berries_button.size.y <= ui.backpack_panel.size.y)
+	assert(ui.backpack_slots.size() == 12)
+	assert(ui.item_action_menu.get_parent() == ui.backpack_panel)
+	assert(ui.item_action_menu.size == Vector2(174, 132))
+	assert(ui.discard_quantity_spinbox.size == Vector2(130, 33))
+	assert(ui.crafting_panel != null)
+	assert(ui.crafting_panel.position == Vector2(237, 72))
+	assert(ui.recipe_buttons.size() == 3)
 	for recipe_id in ui.recipe_buttons:
-		var recipe: Button = ui.recipe_buttons[recipe_id]
-		assert(recipe.scale == Vector2.ONE)
-		assert(recipe.position.y + recipe.size.y <= ui.backpack_panel.size.y)
+		assert(ui.recipe_buttons[recipe_id].get_parent().get_parent() == ui.crafting_panel)
 	_assert_pixel_controls(ui.hud)
 	for index in range(7):
 		assert(ui.hud.get_node_or_null("ActionRailButton%d" % index) == null)

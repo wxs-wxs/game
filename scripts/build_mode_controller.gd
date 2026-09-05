@@ -70,22 +70,36 @@ func cycle_blueprint() -> void:
 	queue_redraw()
 
 func can_place() -> bool:
-	if world == null or world.is_inside or world.game.construction_skill == null: return false
+	return bool(placement_preflight().get("ok", false))
+
+func placement_preflight() -> Dictionary:
+	if world == null or world.game == null:
+		return {"ok":false, "reason":"建造系统未就绪。"}
+	if world.is_inside:
+		return {"ok":false, "reason":"请先离开小屋。"}
+	if world.game.construction_skill == null or world.game.buildings == null or world.game.resources == null:
+		return {"ok":false, "reason":"建造系统未就绪。"}
 	var defs: Dictionary = world.game.buildings.definitions
-	if not defs.has(selected_blueprint) or not world.game.buildings.is_unlocked(selected_blueprint, world.game.construction_skill.level): return false
+	if not defs.has(selected_blueprint):
+		return {"ok":false, "reason":"未知设施。"}
+	var project_status: Dictionary = world.game.buildings.construction_preflight(selected_blueprint, world.game.resources, world.game.construction_skill.level)
+	if not bool(project_status.get("ok", false)):
+		return project_status
 	var definition: Dictionary = defs[selected_blueprint]
-	if not _is_legal_placement_zone(definition, ghost_position): return false
-	if int(definition.get("required_skill_level", 1)) > world.game.construction_skill.level: return false
-	if not world.game.resources.can_afford(definition.get("cost", {})): return false
-	if world.player.global_position.distance_to(ghost_position) > 34.0: return false
+	if not _is_legal_placement_zone(definition, ghost_position):
+		return {"ok":false, "reason":"该设施只能放在营地建造区内。"}
+	if world.player == null or world.player.global_position.distance_to(ghost_position) > 34.0:
+		return {"ok":false, "reason":"建造位置离主角太远。"}
 	for point in world.interactions:
-		if point.global_position.distance_to(ghost_position) < 18.0: return false
+		if is_instance_valid(point) and point.visible and point.global_position.distance_to(ghost_position) < 18.0:
+			return {"ok":false, "reason":"建造位置被交互设施占用。"}
 	if world.is_inside_tree():
 		var query := PhysicsShapeQueryParameters2D.new()
 		var shape := RectangleShape2D.new(); shape.size = Vector2(16, 16); query.shape = shape; query.transform = Transform2D(0.0, ghost_position); query.collide_with_bodies = true
 		for hit in world.get_world_2d().direct_space_state.intersect_shape(query, 8):
-			if hit.get("collider") is StaticBody2D: return false
-	return true
+			if hit.get("collider") is StaticBody2D:
+				return {"ok":false, "reason":"建造位置被地形或障碍物占用。"}
+	return {"ok":true, "reason":"可以建造。"}
 
 func _is_legal_placement_zone(definition: Dictionary, position: Vector2) -> bool:
 	var placement := str(definition.get("placement", "camp"))
@@ -97,9 +111,10 @@ func confirm_build() -> bool:
 		world.game.daily_log.append("建造失败：天色已晚，请先回到床边。")
 		world.interaction_result.emit("天色已晚，请先回到床边。")
 		return false
-	if not can_place():
+	var placement_status := placement_preflight()
+	if not bool(placement_status.get("ok", false)):
 		if world != null and world.game.audio != null: world.game.audio.play_sfx("resource_shortage")
-		if world != null: world.interaction_result.emit("无法建造：材料、技能或位置不满足。")
+		if world != null: world.interaction_result.emit("无法建造：%s" % str(placement_status.get("reason", "条件不满足。")))
 		return false
 	var definition: Dictionary = world.game.buildings.definitions[selected_blueprint]
 	var started: Dictionary = world.game.buildings.start_unified_project(selected_blueprint, ghost_position, world.game.resources, world.game.construction_skill.level)

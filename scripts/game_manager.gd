@@ -259,10 +259,17 @@ func construction_status(building_id: String) -> Dictionary:
 	if definition.is_empty(): return {"id":building_id, "state":"unknown", "reason":"未知设施"}
 	var id := str(building_id)
 	var status := {"id":id, "name":str(definition.get("name", id)), "cost":definition.get("cost", {}).duplicate(true), "build_time":float(definition.get("build_time", 0.0)), "required_skill_level":int(definition.get("required_skill_level", 1)), "context":str(definition.get("context", "camp")), "effect":str(definition.get("description", ""))}
+	var preflight: Dictionary = buildings.construction_preflight(id, resources, construction_skill.level)
 	if buildings.has(id): status["state"] = "completed"
 	elif buildings.active_project.get("id", "") == id or buildings.world_projects.has(id): status["state"] = "building"
-	elif not buildings.is_unlocked(id, construction_skill.level): status["state"] = "locked"; status["reason"] = "需要建造技能 Lv.%d" % int(definition.get("required_skill_level", 1))
-	elif not resources.can_afford(definition.get("cost", {})): status["state"] = "materials"; status["reason"] = resources.missing_cost_text(definition.get("cost", {}))
+	elif not buildings.active_project.is_empty():
+		status["state"] = "busy"
+		status["reason"] = str(preflight.get("reason", "已有建造项目"))
+	elif not bool(preflight.get("ok", false)):
+		status["reason"] = str(preflight.get("reason", "无法建造"))
+		if not buildings.is_unlocked(id, construction_skill.level): status["state"] = "locked"
+		elif resources == null or not resources.can_afford(definition.get("cost", {})): status["state"] = "materials"
+		else: status["state"] = "locked"
 	else: status["state"] = "available"
 	return status
 

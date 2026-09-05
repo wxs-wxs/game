@@ -15,15 +15,11 @@ func _init() -> void:
 	assert(resources.backpack["stone"] == 2)
 	assert(resources.storage["stone"] == 4)
 
-	# Crafting expands the carry limit and persists through serialization.
-	var crafted := resources.craft_backpack()
-	assert(crafted.get("ok", false))
-	assert(resources.has_backpack())
-	assert(resources.backpack_capacity == ResourceManager.BACKPACK_UPGRADED_CAPACITY)
+	# The backpack is fixed at 3x4 and persists as that size through serialization.
+	assert(resources.backpack_capacity == ResourceManager.BACKPACK_BASE_CAPACITY)
 	var restored := ResourceManager.new()
 	restored.from_dict(resources.to_dict())
-	assert(restored.has_backpack())
-	assert(restored.backpack_capacity == ResourceManager.BACKPACK_UPGRADED_CAPACITY)
+	assert(restored.backpack_capacity == ResourceManager.BACKPACK_BASE_CAPACITY)
 	assert(restored.backpack["stone"] == 2)
 
 	# A field interaction starts a named action on the human player rather than

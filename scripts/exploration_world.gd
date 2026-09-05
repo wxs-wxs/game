@@ -5,7 +5,6 @@ signal interaction_changed(prompt: String)
 signal interaction_result(message: String)
 signal interaction_progress_changed(name: String, progress: float)
 signal storage_open_requested
-signal fish_processing_requested(fish_key: String)
 signal tool_selection_requested
 
 const MAP_SIZE := Vector2(1920, 1080)
@@ -449,12 +448,20 @@ func _refresh_audio_context() -> void:
 		var context := "rain_campfire" if game.weather == "暴雨" and near_fire else ("campfire" if near_fire else ("rain" if game.weather == "暴雨" else "outdoor"))
 		game.audio.play_ambience(context)
 
+func is_near_active_campfire(radius: float = 110.0) -> bool:
+	if is_inside or game == null or player == null or not game.is_fire_active("campfire"):
+		return false
+	for point in interactions:
+		if not is_instance_valid(point) or point.unique_id != "campfire" or point.get_parent() != self:
+			continue
+		if player.global_position.distance_to(point.global_position) <= radius:
+			return true
+	return false
+
 func _on_point_completed(point: InteractionPoint, result: Dictionary) -> void:
 	interaction_result.emit("%s：%s" % [point.display_name, str(result.get("message", "完成"))])
 	if bool(result.get("open_storage", false)):
 		storage_open_requested.emit()
-	if result.has("fish_key"):
-		fish_processing_requested.emit(str(result.get("fish_key", "")))
 	if bool(result.get("open_tool_selection", false)):
 		tool_selection_requested.emit()
 

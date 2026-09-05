@@ -37,5 +37,35 @@ func _init() -> void:
 	assert(not build.active, "E should leave build mode after confirming")
 	assert(build.site != null, "E should create a construction site")
 	assert(game.resources.get_amount("wood") == expected_wood)
+
+	# A second facility must not consume materials or silently fail while another
+	# project is still active; the E path should preserve build mode and expose
+	# the same busy reason as the selection panel.
+	var busy_game := GameManager.new()
+	assert(busy_game.begin_construction("campfire").get("ok", false))
+	var busy_world := ExplorationWorld.new()
+	root.add_child(busy_world)
+	busy_world.setup(busy_game)
+	var busy_build = busy_world.build_mode
+	var busy_ui := UIController.new()
+	root.add_child(busy_ui)
+	busy_ui.setup(busy_game, busy_world)
+	busy_ui._open_build_selection()
+	var busy_card: Button = busy_ui.facility_buttons["bed"]
+	var busy_labels: Dictionary = busy_ui.facility_card_labels["bed"]
+	assert(busy_card.disabled)
+	assert((busy_labels["status"] as Label).text.contains("篝火"))
+	busy_ui._close_build_selection()
+	busy_build.selected_blueprint = "bed"
+	busy_build.toggle()
+	var busy_wood := busy_game.resources.get_amount("wood")
+	var busy_event := InputEventKey.new()
+	busy_event.keycode = KEY_E
+	busy_event.physical_keycode = KEY_E
+	busy_event.pressed = true
+	busy_build._unhandled_input(busy_event)
+	assert(busy_build.active, "E must not leave build mode when another project is active")
+	assert(busy_game.resources.get_amount("wood") == busy_wood)
+	assert(str(busy_build.placement_preflight().get("reason", "")).contains("篝火"))
 	print("BUILD_MODE_REGRESSION_OK ghost=%s wood=%d" % [build.site.position, game.resources.get_amount("wood")])
 	quit()

@@ -1,5 +1,7 @@
 extends SceneTree
 
+const Assets = preload("res://scripts/ninja_adventure_assets.gd")
+
 func _init() -> void:
 	var main := preload("res://scenes/Main.tscn").instantiate()
 	root.add_child(main)
@@ -36,6 +38,11 @@ func _init() -> void:
 		assert(facility_icon.size == Vector2(16, 16), facility_id)
 		assert(facility_icon.scale == Vector2.ONE, facility_id)
 		assert(facility_icon.texture_filter == CanvasItem.TEXTURE_FILTER_NEAREST, facility_id)
+		var expected := Assets.building_icon(str(facility_id)) as AtlasTexture
+		var actual := facility_icon.texture as AtlasTexture
+		assert(actual != null and expected != null, facility_id)
+		assert(actual.atlas.resource_path == expected.atlas.resource_path, facility_id)
+		assert(actual.region == expected.region, facility_id)
 	ui._close_build_selection()
 	assert(ui.hud.get_node_or_null("HelpButton") == null)
 	var help_key := InputEventKey.new()
