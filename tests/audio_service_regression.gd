@@ -12,7 +12,7 @@ const BUS_PARENTS := {
 }
 
 func _init() -> void:
-	var service: AudioService = AudioServiceResource.new()
+	var service = AudioServiceResource.new()
 	service.headless_mode = true
 	service._music.headless_mode = true
 	service._ambience.headless_mode = true
@@ -50,7 +50,7 @@ func _init() -> void:
 	assert(service.active_ambience_layers.has("Environment"))
 	assert(service.active_ambience_layers.has("Weather"))
 	assert(service.active_ambience_layers.has("Fire"))
-	var music_log_size := service.event_log.size()
+	var music_log_size: int = service.event_log.size()
 	service.set_world_state({"phase": "exploration", "weather": "rain", "location": "outdoor", "fire_lit": true})
 	assert(service.event_log.size() == music_log_size, "state de-duplication must not emit events")
 	service.set_world_state({"phase": "exploration", "weather": "rain", "threat": "high", "location": "outdoor", "fire_lit": true})
@@ -65,7 +65,7 @@ func _init() -> void:
 	assert(is_equal_approx(settings_data.music, 0.25))
 	assert(is_equal_approx(settings_data.ambience, 0.75))
 	assert(is_equal_approx(settings_data.sfx, 1.0))
-	var base_targets := service.last_snapshot_targets.duplicate(true)
+	var base_targets: Dictionary = service.last_snapshot_targets.duplicate(true)
 	service.push_snapshot("pause")
 	assert(service.last_snapshot_targets["Music"] < base_targets["Music"])
 	service.pop_snapshot("pause")
@@ -79,7 +79,7 @@ func _init() -> void:
 	assert(service.listener_position == Vector2(12, 18))
 	assert(service._rng != null, "service owns a private RNG")
 	assert(service.save_user_settings() == OK, "settings should save through ConfigFile")
-	var restored: AudioService = AudioServiceResource.new()
+	var restored = AudioServiceResource.new()
 	restored.headless_mode = true
 	assert(restored.load_user_settings(), "settings should load through ConfigFile")
 	assert(is_equal_approx(restored.to_settings_dict().music, 0.25))
@@ -154,8 +154,8 @@ func _cue(id: String, bus: String, spatial: String, priority: int, steal: String
 	cue.max_instances = 1
 	return cue
 
-func base_volume_db(service: AudioService, bus_name: String) -> float:
-	var data := service.to_settings_dict()
+func base_volume_db(service, bus_name: String) -> float:
+	var data: Dictionary = service.to_settings_dict()
 	var value := 1.0
 	if bus_name == "Music":
 		value = data.music

@@ -1,4 +1,3 @@
-class_name AudioService
 extends Node
 
 const AudioCatalogResource = preload("res://scripts/audio_catalog.gd")

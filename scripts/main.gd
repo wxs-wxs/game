@@ -8,10 +8,10 @@ var refresh_accumulator := 0.0
 
 func _ready() -> void:
 	game = GameManager.new()
-	audio = preload("res://scripts/audio_manager.gd").new()
-	audio.name = "AudioManager"
-	add_child(audio)
+	audio = get_node_or_null("/root/AudioService")
 	game.audio = audio
+	if audio != null:
+		audio.load_user_settings()
 	world = ExplorationWorld.new()
 	world.name = "ExplorationWorld"
 	add_child(world)

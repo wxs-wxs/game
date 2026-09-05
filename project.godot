@@ -14,6 +14,10 @@ config/name="Ember Camp"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.7")
 
+[autoload]
+
+AudioService="*res://scripts/audio_service.gd"
+
 [display]
 
 window/size/mode=3
