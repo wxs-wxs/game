@@ -2,7 +2,7 @@
 
 Status: PASS (Task 3 focused checks)
 
-Commit: pending
+Commit: 4788d3e (amended below to include this hash in the report)
 
 Changes:
 
