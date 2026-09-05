@@ -45,7 +45,13 @@ func _discard(key: String, amount: int, from_backpack: bool) -> Dictionary:
 	return {"ok":true, "amount":quantity}
 func to_dict() -> Dictionary: return {"backpack":backpack.duplicate(true), "storage":storage.duplicate(true), "backpack_capacity":backpack_capacity}
 func from_dict(data: Dictionary) -> void:
+	var saved_backpack = data.get("backpack", {})
+	var saved_storage = data.get("storage", {})
+	var saved_amounts = data.get("amounts", {})
+	var has_amounts := saved_amounts is Dictionary
 	for key in catalog.ITEM_KEYS:
-		backpack[key] = maxi(0, int(data.get("backpack", {}).get(key, 0)))
-		storage[key] = maxi(0, int(data.get("storage", {}).get(key, 0)))
+		backpack[key] = maxi(0, int(saved_backpack.get(key, 0))) if saved_backpack is Dictionary else 0
+		var default_storage := int(catalog.INITIAL_AMOUNTS.get(key, 0)) if key in catalog.RESOURCE_KEYS else 0
+		if has_amounts: default_storage = int(saved_amounts.get(key, default_storage))
+		storage[key] = maxi(0, int(saved_storage.get(key, default_storage))) if saved_storage is Dictionary else default_storage
 	backpack_capacity = ResourceCatalog.BACKPACK_BASE_CAPACITY

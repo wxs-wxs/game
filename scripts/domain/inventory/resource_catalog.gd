@@ -10,6 +10,8 @@ const TOOL_KEYS := ["axe", "pickaxe"]
 const BACKPACK_BASE_CAPACITY := 12
 const BACKPACK_UPGRADED_CAPACITY := BACKPACK_BASE_CAPACITY
 const STACK_MAX := 999
+const INITIAL_AMOUNTS := {"food":12, "wood":10, "medicine":3, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0, "cooked_food":0, "bandage":0, "torch":0, "trap":0, "fish_carp":0, "fish_bass":0, "fish_trout":0, "fish_eel":0, "cooked_fish_carp":0, "cooked_fish_bass":0, "cooked_fish_trout":0, "cooked_fish_eel":0}
+const CAPACITIES := {"food":30, "wood":35, "medicine":15, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30, "cooked_food":30, "bandage":30, "torch":30, "trap":30, "fish_carp":30, "fish_bass":30, "fish_trout":30, "fish_eel":30, "cooked_fish_carp":30, "cooked_fish_bass":30, "cooked_fish_trout":30, "cooked_fish_eel":30}
 const FISH_DEFINITIONS := {
 	"fish_carp": {"label":"鲤鱼", "cooked_key":"cooked_fish_carp", "cooked_label":"熟鲤鱼", "food":2},
 	"fish_bass": {"label":"鲈鱼", "cooked_key":"cooked_fish_bass", "cooked_label":"熟鲈鱼", "food":3},
@@ -21,7 +23,7 @@ const TOOL_DEFINITIONS := {
 	"pickaxe": {"id":"pickaxe", "label":"石镐", "cost":{"stone":3, "wood":2}, "description":"开采地图上的石堆，获得更多石料。"}
 }
 const SOURCE_RULES := {"stone":["field_pebble", "pebble", "rock_pile"], "wood":["field_branch", "branch", "forest_berries", "forest_tree"]}
-const DISPLAY_NAMES := {"food":"浆果", "wood":"木材", "medicine":"药品", "stone":"石料", "fiber":"纤维", "cloth":"布料", "metal":"金属", "water":"水", "cooked_food":"熟浆果", "bandage":"绷带", "torch":"火把", "trap":"陷阱"}
+const DISPLAY_NAMES := {"food":"浆果", "wood":"木材", "medicine":"药品", "stone":"石料", "fiber":"纤维", "cloth":"布料", "metal":"金属", "water":"水", "cooked_food":"熟浆果", "bandage":"绷带", "torch":"火把", "trap":"陷阱", "axe":"石斧", "pickaxe":"石镐"}
 
 func item_keys() -> Array[String]: return ITEM_KEYS.duplicate()
 func display_name(key: String) -> String:

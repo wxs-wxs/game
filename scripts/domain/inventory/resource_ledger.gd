@@ -12,8 +12,8 @@ func _init(catalog_value = null, inventory_value = null) -> void:
 	catalog = catalog_value
 	inventory = inventory_value
 	for key in catalog.ITEM_KEYS:
-		amounts[key] = {"food":12, "wood":10, "medicine":3, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0}.get(key, 0)
-		capacities[key] = {"food":30, "wood":35, "medicine":15, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30}.get(key, 30)
+		amounts[key] = int(catalog.INITIAL_AMOUNTS.get(key, 0))
+		capacities[key] = int(catalog.CAPACITIES.get(key, catalog.STACK_MAX))
 
 func get_amount(key: String) -> int: return int(amounts.get(key, 0))
 func can_afford(cost: Dictionary) -> bool:
@@ -43,14 +43,37 @@ func spend(cost: Dictionary) -> bool:
 	return true
 func can_collect_rewards(rewards: Dictionary) -> bool:
 	var simulated := amounts.duplicate()
+	var simulated_backpack: Dictionary = inventory.backpack.duplicate() if inventory != null else {}
+	var used: int = inventory.backpack_slots_used() if inventory != null else 0
 	for key in rewards:
 		var id := str(key); var amount := int(rewards[key])
 		if amount < 0 or amount == 0: continue
 		if not catalog.ITEM_KEYS.has(id) or int(simulated.get(id, 0)) + amount > int(capacities.get(id, catalog.STACK_MAX)): return false
+		if inventory != null:
+			var current := int(simulated_backpack.get(id, 0))
+			if current + amount > catalog.STACK_MAX: return false
+			if current == 0:
+				used += 1
+				if used > inventory.backpack_capacity: return false
+				simulated_backpack[id] = current + amount
 		simulated[id] = int(simulated.get(id, 0)) + amount
 	return true
 func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dictionary:
 	if rewards.is_empty(): return {"ok":true, "reason":"没有奖励。", "changed":false, "data":{}, "added":{}}
+	if source_id == "camp_task":
+		for key in rewards:
+			var id := str(key); var amount := int(rewards[key])
+			if amount <= 0: continue
+			if not catalog.ITEM_KEYS.has(id) or get_amount(id) + amount > int(capacities.get(id, catalog.STACK_MAX)):
+				return {"ok":false, "reason":"营地储备空间不足。", "changed":false, "data":{}}
+		var stored := {}
+		for key in rewards:
+			var id := str(key); var amount := int(rewards[key])
+			if amount <= 0: continue
+			amounts[id] += amount
+			if inventory != null: inventory.storage[id] = int(inventory.storage.get(id, 0)) + amount
+			total_collected += amount; stored[id] = amount
+		return {"ok":true, "reason":"奖励已存入营地。", "changed":not stored.is_empty(), "data":stored, "added":stored}
 	if not can_collect_rewards(rewards): return {"ok":false, "reason":"携带空间不足，请先整理背包。", "changed":false, "data":{}}
 	for key in rewards:
 		if int(rewards[key]) > 0 and not _source_allowed(str(key), source_id): return {"ok":false, "reason":"该来源无法提供此奖励。", "changed":false, "data":{}}
@@ -60,6 +83,7 @@ func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dict
 		if amount <= 0: continue
 		var actual := add(str(key), amount)
 		if actual != amount: return {"ok":false, "reason":"奖励领取失败。", "changed":false, "data":{}}
+		if inventory != null: inventory.backpack[str(key)] = int(inventory.backpack.get(str(key), 0)) + amount
 		added[str(key)] = amount
 	return {"ok":true, "reason":"奖励已领取。", "changed":true, "data":added, "added":added}
 func to_dict() -> Dictionary: return {"amounts":amounts.duplicate(true), "capacities":capacities.duplicate(true), "total_collected":total_collected}
