@@ -8,6 +8,10 @@ func _init() -> void:
 	assert(legacy.inventory_state is InventoryState)
 	legacy.ledger.amounts["stone"] = 7
 	assert(legacy.amounts["stone"] == 7)
+	legacy.ledger.capacities["stone"] = 8
+	assert(legacy.capacities["stone"] == 8)
+	legacy.tool_state["axe"] = true
+	assert(legacy.tools["axe"])
 	legacy.inventory_state.backpack["fiber"] = 2
 	assert(legacy.backpack["fiber"] == 2)
 	legacy.backpack["fiber"] = 0
@@ -18,6 +22,8 @@ func _init() -> void:
 	assert(direct.ledger.amounts["wood"] == 6)
 	direct.backpack["fiber"] = 1
 	assert(direct.inventory_state.backpack["fiber"] == 1)
+	direct.tools["pickaxe"] = true
+	assert(direct.tool_state["pickaxe"])
 	legacy.backpack["wood"] = 1
 	assert(legacy.backpack_slots_used() == 1)
 	var reward := {"medicine": 1, "metal": 1}
