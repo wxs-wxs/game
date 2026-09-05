@@ -606,42 +606,16 @@ func use_item(item_id: String) -> Dictionary:
 	return crafting.use_item(item_id)
 
 func _night_settlement() -> Array[String]:
-	var lines: Array[String] = ["夜间结算"]
-	survival.observe_resources(self)
-	var alive: Array = []
-	for survivor in survivors:
-		if survivor.alive: alive.append(survivor)
-	var meals := mini(resources.get_amount("food"), alive.size())
-	resources.add("food", -meals)
-	for index in alive.size():
-		var survivor: Survivor = alive[index]
-		if index < meals:
-			survivor.apply_change("hunger", 18)
-		else:
-			survivor.apply_change("hunger", -22); survivor.apply_change("health", -7); survivor.apply_change("morale", -8)
-			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_food", "amount": 7})
-	if meals < alive.size():
-		lines.append("食物不足：%d 人空腹，生命与士气下降。" % [alive.size() - meals])
-		_emit_audio("survival.food_warning", {"missing_meals": alive.size() - meals})
-	else: lines.append("配给完成：消耗 %d 食物。" % meals)
-	lines.append("夜间温度结算：低温伤害已在探索过程中实时计算。")
-	if weather == "暴雨":
-		var collected_water := buildings.rain_water_yield()
-		if collected_water > 0:
-			var actual_water := resources.add("water", collected_water)
-			lines.append("暴雨收集：获得 %d 水。" % actual_water)
-	if weather == "暴雨" and rng.randf() < (0.35 if not in_house or house_level == 0 else 0.12):
-		var patient := random_alive()
-		if patient != null:
-			patient.sick = true; patient.apply_change("health", -4); lines.append("暴雨让 %s 着凉生病。" % patient.display_name)
-	if resources.get_amount("food") == 0: no_food_days += 1
-	else: no_food_days = 0
-	for survivor in survivors:
-		if survivor.alive and (survivor.health <= 0 or survivor.hunger <= 0):
-			survivor.apply_change("health", -12)
-			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_starvation", "amount": 12})
-			if not survivor.alive: lines.append("%s 没能撑过这一夜。" % survivor.display_name)
-	return lines
+	var context := _night_context_input()
+	context["report_lines"] = []
+	var result: Dictionary = _night_settlement_service.settle(context)
+	report_lines = result.get("report_lines", [])
+	no_food_days = int(result.get("no_food_days", no_food_days))
+	night_context = result.get("night_context", {})
+	for audio_event in result.get("audio_events", []):
+		if audio_event is Dictionary:
+			_emit_audio(str(audio_event.get("id", "")), audio_event.get("params", {}))
+	return report_lines
 
 func _night_context_input() -> Dictionary:
 	return {

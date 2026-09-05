@@ -38,6 +38,14 @@ func _init() -> void:
 	assert(bool(death.get("ok", false)))
 	assert(_count_audio(audio, "player.death") == 1)
 	assert(_count_audio(audio, "game.over") == 1)
+	var milestone_game := GameManager.new()
+	milestone_game.audio = audio
+	milestone_game.start_exploration()
+	milestone_game.day_return_required = true
+	milestone_game.events.definitions = {}
+	var milestone := milestone_game.finish_exploration_day()
+	assert(bool(milestone.get("ok", false)))
+	assert(_count_audio(audio, "milestone.reached") == 1)
 	print("GAME_MANAGER_SURVIVAL_FACADE_REGRESSION_OK")
 	quit()
 

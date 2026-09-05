@@ -37,7 +37,36 @@ class SettlementContext extends RefCounted:
 				count += 1
 		return count
 
+class AudioCollector extends RefCounted:
+	var events: Array[Dictionary] = []
+
+	func emit_event(event_id: String, params: Dictionary = {}) -> String:
+		events.append({"id": event_id, "params": params.duplicate(true)})
+		return "collected"
+
 func resolve(context: Dictionary) -> Dictionary:
+	var result: Dictionary = settle(context)
+	if str(result.get("phase", "")) == "error":
+		return result
+	if bool(result.get("health_depleted", false)):
+		result["phase"] = "ended"
+		result["audio_events"].append({"id": "player.death", "params": {}})
+		result["audio_events"].append({"id": "game.over", "params": {}})
+		return result
+	var events = context.get("events")
+	var rng = context.get("rng")
+	var event: Dictionary = {}
+	if events != null and rng != null and events.has_method("create_weighted_event"):
+		var event_context := _event_context(str(context.get("weather", "晴朗")), context.get("buildings"), context.get("survival"))
+		event = events.create_weighted_event(rng, event_context)
+		if not event.is_empty():
+			result["phase"] = "event"
+			result["event"] = event
+			result["audio_events"].append({"id": "event.reveal", "params": {"event_id": str(event.get("id", ""))}})
+	result["audio_events"].append({"id": "night.report", "params": {}})
+	return result
+
+func settle(context: Dictionary) -> Dictionary:
 	var contract_error := _validate_context(context)
 	if not contract_error.is_empty():
 		return _failure_result(context, contract_error)
@@ -47,7 +76,6 @@ func resolve(context: Dictionary) -> Dictionary:
 	var rng = context.get("rng")
 	var buildings = context.get("buildings")
 	var survival = context.get("survival")
-	var events = context.get("events")
 	var lines: Array[String] = []
 	for line in context.get("report_lines", []):
 		lines.append(str(line))
@@ -121,26 +149,15 @@ func resolve(context: Dictionary) -> Dictionary:
 		var strategy_game = _make_settlement_context(context, resources, survivors, buildings, weather)
 		for line in survival.settle_day(strategy_game):
 			lines.append(str(line))
+	var collector = context.get("_audio_collector")
+	if collector is AudioCollector:
+		audio_events.append_array(collector.events)
 
 	var health_depleted := _protagonist_depleted(survivors)
-	var event: Dictionary = {}
-	var phase := "ended" if health_depleted else "report"
-	if not health_depleted and events != null and rng != null and events.has_method("create_weighted_event"):
-		var event_context := _event_context(weather, buildings, survival)
-		event = events.create_weighted_event(rng, event_context)
-		if not event.is_empty():
-			phase = "event"
-			audio_events.append({"id": "event.reveal", "params": {"event_id": str(event.get("id", ""))}})
-	if not health_depleted:
-		audio_events.append({"id": "night.report", "params": {}})
-	else:
-		audio_events.append({"id": "player.death", "params": {}})
-		audio_events.append({"id": "game.over", "params": {}})
-
 	return {
 		"report_lines": lines,
-		"phase": phase,
-		"event": event,
+		"phase": "ended" if health_depleted else "report",
+		"event": {},
 		"health_depleted": health_depleted,
 		"night_context": night_context,
 		"audio_events": audio_events,
@@ -217,6 +234,11 @@ func _make_settlement_context(context: Dictionary, resources, survivors: Array, 
 	adapter.buildings = buildings
 	adapter.in_house = bool(context.get("in_house", false))
 	adapter.built_facilities = _built_ids(buildings)
+	var collector: AudioCollector = context.get("_audio_collector")
+	if collector == null:
+		collector = AudioCollector.new()
+	adapter.audio = collector
+	context["_audio_collector"] = collector
 	return adapter
 
 func _built_ids(buildings) -> Array[String]:
