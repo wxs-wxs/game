@@ -1,5 +1,21 @@
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$godotConsole = Join-Path $projectRoot ".tools\godot\Godot_v4.7.2-stable_win64_console.exe"
+$godotConsole = $null
+$searchRoot = $projectRoot
+while ($true) {
+    $candidate = Join-Path $searchRoot ".tools\godot\Godot_v4.7.2-stable_win64_console.exe"
+    if (Test-Path $candidate) {
+        $godotConsole = $candidate
+        break
+    }
+    $parent = Split-Path $searchRoot -Parent
+    if ($parent -eq $searchRoot) {
+        break
+    }
+    $searchRoot = $parent
+}
+if ($godotConsole -eq $null) {
+    throw "Unable to locate Godot console executable."
+}
 $tests = @(
     "tests/endless_day_flow_regression.gd",
     "tests/event_flow_regression.gd",
