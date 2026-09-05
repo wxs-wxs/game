@@ -1127,8 +1127,8 @@ func refresh() -> void:
 	_refresh_storage_panel()
 	if pause_panel != null:
 		pause_panel.visible = paused_by_menu
-	if pause_dim != null:
-		pause_dim.visible = paused_by_menu
+		if pause_dim != null:
+			pause_dim.visible = paused_by_menu
 		if message_label != null and message_until > 0.0 and message_until <= current_time:
 			message_label.text = ""
 			message_until = 0.0
@@ -1173,7 +1173,7 @@ func _build_ui_snapshot() -> Dictionary:
 		"day": "第%d天" % int(game.day) if game != null else "",
 		"clock": _clock_text(),
 		"weather": _weather_text(str(game.weather)) if game != null else "",
-		"temperature": {"text": temperature_label.text if temperature_label != null else "", "tooltip": temperature_label.tooltip_text if temperature_label != null else "", "environment": temperature_status.get("environment", 0.0), "body": temperature_status.get("body", 0.0)},
+			"temperature": {"text": "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))], "tooltip": "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0)), "environment": temperature_status.get("environment", 0.0), "body": temperature_status.get("body", 0.0)},
 		"resources": resources_snapshot,
 		"survivor": survivor_snapshot,
 		"objective": _build_objective_snapshot(hero),
