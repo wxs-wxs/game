@@ -50,7 +50,7 @@ func route(event: InputEvent, state: Dictionary) -> Dictionary:
 			return _result("build_cycle", true, ACTION_BUILD_CYCLE)
 		return _unhandled()
 
-	if _pressed(event, ACTION_CANCEL, KEY_ESCAPE):
+	if event is InputEventKey and _pressed(event, ACTION_CANCEL, KEY_ESCAPE):
 		if overlay_open:
 			return _result("cancel", true, ACTION_CANCEL, {"scope":"overlay"})
 		if build_active or interaction_active:
@@ -58,7 +58,7 @@ func route(event: InputEvent, state: Dictionary) -> Dictionary:
 		return _unhandled()
 
 	if _pressed(event, ACTION_INTERACT, KEY_E):
-		return _result("interact", true, ACTION_INTERACT, {"blocked":overlay_open or paused_by_menu})
+		return _result("interact", true, ACTION_INTERACT, {"blocked":build_active, "build_active":build_active})
 
 	if _matches_key(event, KEY_F5):
 		return _result("save", true, StringName("save_game"))
