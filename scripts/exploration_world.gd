@@ -7,12 +7,14 @@ signal interaction_progress_changed(name: String, progress: float)
 signal storage_open_requested
 signal tool_selection_requested
 
-const MAP_SIZE := Vector2(1920, 1080)
+const WorldLayout = preload("res://scripts/world/map/world_layout.gd")
+const WorldCollisionBuilder = preload("res://scripts/world/map/world_collision_builder.gd")
+const MAP_SIZE := WorldLayout.MAP_SIZE
 # Keep the room outside the outdoor map's full draw and collision range.  The
 # old x=1500 placement overlapped the eastern river and its collision polygon,
 # which made those outdoor obstacles appear as indoor air walls.
-const INTERIOR_OFFSET := Vector2(2400, 0)
-const INTERIOR_ROOM_SIZE := Vector2(180, 180)
+const INTERIOR_OFFSET := WorldLayout.INTERIOR_OFFSET
+const INTERIOR_ROOM_SIZE := WorldLayout.INTERIOR_ROOM_SIZE
 const CAMERA_LOOK_AHEAD := Vector2(0, -48)
 const DUSK_BLOCKED_ACTIONS := ["chop", "mine_stone", "fish", "gather", "search_ruins", "collect_branch", "pickup", "build", "construct"]
 const OUTDOOR_CAMERA_ZOOM := Vector2(1.35, 1.35)
@@ -35,27 +37,20 @@ const NINJA_FLAG_SHEET := "res://assets/art/ninja_adventure/Backgrounds/Animated
 # interaction point on that artwork instead of placing a second marker at the
 # perimeter gate.  The outside threshold is where the player's 12x14 body can
 # stand immediately below the visual door.
-const HOUSE_DOOR_POSITION := Vector2(158, 124)
-const HOUSE_DOOR_OUTSIDE_POSITION := Vector2(158, 145)
+const HOUSE_DOOR_POSITION := WorldLayout.HOUSE_DOOR_POSITION
+const HOUSE_DOOR_OUTSIDE_POSITION := WorldLayout.HOUSE_DOOR_OUTSIDE_POSITION
 # The village atlas is tightly packed: the ruin is the first 4x3 tile block.
 const RUIN_TEXTURE_REGION := Rect2(0, 0, 64, 48)
-const HARVESTABLE_TREE_POSITIONS := [
-	Vector2(81, 291), Vector2(146, 341), Vector2(256, 281), Vector2(341, 351),
-	Vector2(1390, 238), Vector2(1490, 180), Vector2(1470, 871), Vector2(1420, 940)
-]
-const GROVE_TREE_POSITIONS := [
-	Vector2(24, 234), Vector2(118, 230), Vector2(192, 254), Vector2(308, 228),
-	Vector2(60, 386), Vector2(116, 428), Vector2(210, 406), Vector2(286, 438),
-	Vector2(955, 344), Vector2(1030, 320), Vector2(1138, 350), Vector2(1205, 410),
-	Vector2(1340, 186), Vector2(1425, 120), Vector2(1390, 330), Vector2(1470, 330),
-	Vector2(1350, 834), Vector2(1348, 930), Vector2(1485, 790)
-]
+const HARVESTABLE_TREE_POSITIONS := WorldLayout.HARVESTABLE_TREE_POSITIONS
+const GROVE_TREE_POSITIONS := WorldLayout.GROVE_TREE_POSITIONS
 # The old water block was a closed 370x264 rectangle, which read as a pond and
 # also created several invisible wall strips around it.  This is now a coastal
 # river mouth: it runs beyond both map edges and occupies the far-east margin.
-const RIVER_RECT := Rect2(1532, -32, 388, 1144)
-const RIVER_BANK_SWING := 34.0
-var map_size := MAP_SIZE
+const RIVER_RECT := WorldLayout.RIVER_RECT
+const RIVER_BANK_SWING := WorldLayout.RIVER_BANK_SWING
+var world_layout: WorldLayout = WorldLayout.new()
+var collision_builder: WorldCollisionBuilder = WorldCollisionBuilder.new()
+var map_size := world_layout.MAP_SIZE
 var game: GameManager
 var player: ExplorerPlayer
 var interactions: Array[InteractionPoint] = []
@@ -320,7 +315,7 @@ func exit_house() -> void:
 	interaction_changed.emit("")
 
 func _safe_outdoor_position(value: Vector2) -> Vector2:
-	return Vector2(clampf(value.x, 20.0, map_size.x - 20.0), clampf(value.y, 20.0, map_size.y - 20.0))
+	return world_layout.safe_outdoor_position(value)
 
 func get_player_bounds() -> Rect2:
 	if is_inside:
@@ -330,8 +325,8 @@ func get_player_bounds() -> Rect2:
 		# Keep an indoor fallback while InteriorManager is creating/removing the
 		# room; returning outdoor bounds here would snap an indoor player back into
 		# the expanded outdoor field.
-		return Rect2(INTERIOR_OFFSET + Vector2(16.0, 17.0), Vector2(148.0, 146.0))
-	return Rect2(Vector2(12.0, 12.0), Vector2(map_size.x - 24.0, map_size.y - 24.0))
+		return world_layout.interior_bounds()
+	return world_layout.outdoor_playable_bounds()
 
 func _is_point_available(point: InteractionPoint) -> bool:
 	if not is_instance_valid(point): return false
@@ -490,55 +485,16 @@ func _on_point_completed(point: InteractionPoint, result: Dictionary) -> void:
 	_refresh_audio_context()
 
 func _build_collisions() -> void:
-	# There is intentionally no invisible perimeter body. The expanded field is
-	# bounded only by the player's soft map clamp, so the old air-wall snag is
-	# gone while the camera still keeps the world in frame.
-	# camp fence / house. The shelter body is split around the drawn doorway
-	# (x=151..165), leaving enough clearance for the player's 12 px width.
-	_add_wall(Rect2(75, 75, 125, 12), "CampFence"); _add_wall(Rect2(235, 75, 30, 12), "CampFence"); _add_wall(Rect2(75, 75, 12, 130), "CampFence"); _add_wall(Rect2(253, 75, 12, 130), "CampFence")
-	# The lower fence is solid except for a 36px gate aligned to the camp opening.
-	_add_wall(Rect2(75, 199, 112, 12), "CampFence"); _add_wall(Rect2(223, 199, 42, 12), "CampFence")
-	_add_wall(Rect2(132, 102, 19, 35), "HouseWall"); _add_wall(Rect2(165, 102, 19, 35), "HouseWall")
-	# The water is a single solid polygon.  Keeping one curved shoreline body
-	# removes the old detached strips that felt like invisible air walls.
-	_add_water_collision()
-	# ruins building
-	_add_wall(Rect2(950, 380, 210, 18), "RuinWall"); _add_wall(Rect2(950, 380, 18, 185), "RuinWall"); _add_wall(Rect2(1142, 380, 18, 185), "RuinWall"); _add_wall(Rect2(950, 547, 80, 18), "RuinWall")
-	# rock piles and trees
-	for rect in [Rect2(350, 145, 28, 28), Rect2(430, 230, 32, 24), Rect2(280, 410, 30, 26), Rect2(435, 535, 30, 30), Rect2(810, 490, 32, 24), Rect2(870, 590, 26, 28), Rect2(1328, 388, 30, 30), Rect2(1465, 550, 30, 30), Rect2(1495, 732, 30, 30), Rect2(1465, 916, 30, 30)]: _add_wall(rect, "RockPile")
-	for position in HARVESTABLE_TREE_POSITIONS:
-		_add_wall(Rect2(position - Vector2(11, 21), Vector2(22, 42)), "Tree")
-	for position in GROVE_TREE_POSITIONS:
-		_add_wall(Rect2(position - Vector2(8, 14), Vector2(16, 28)), "SmallTree")
+	collision_builder.build(self, world_layout)
 
 func _add_wall(rect: Rect2, kind: String = "Landmark") -> void:
-	var body := StaticBody2D.new()
-	body.name = "%sCollision" % kind
-	var shape := CollisionShape2D.new()
-	var box := RectangleShape2D.new()
-	box.size = rect.size
-	shape.shape = box
-	body.position = rect.position + rect.size * 0.5
-	body.add_child(shape)
-	add_child(body)
+	collision_builder.add_wall(self, rect, kind)
 
 func _river_bank_x(y: float) -> float:
-	var wave := sin(y * 0.0105 + 0.45) * RIVER_BANK_SWING
-	wave += sin(y * 0.027 + 1.7) * 9.0
-	return clampf(RIVER_RECT.position.x + wave, RIVER_RECT.position.x - RIVER_BANK_SWING, RIVER_RECT.position.x + RIVER_BANK_SWING)
+	return world_layout.river_bank_x(y)
 
 func _add_water_collision() -> void:
-	var body := StaticBody2D.new()
-	body.name = "RiverWaterCollision"
-	var polygon := CollisionPolygon2D.new()
-	var points := PackedVector2Array()
-	for y in range(-32, int(map_size.y) + 33, 16):
-		points.append(Vector2(_river_bank_x(float(y)), float(y)))
-	points.append(Vector2(map_size.x + 24.0, map_size.y + 32.0))
-	points.append(Vector2(map_size.x + 24.0, -32.0))
-	polygon.polygon = points
-	body.add_child(polygon)
-	add_child(body)
+	collision_builder.add_water_collision(self, world_layout)
 
 func _build_art_sprites() -> void:
 	# Every landmark below comes directly from Ninja Adventure PNGs. Collision

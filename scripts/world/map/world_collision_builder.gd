@@ -25,7 +25,7 @@ func build(parent: Node2D, layout: WorldLayout) -> void:
 
 	for rect in [
 		Rect2(350, 145, 28, 28), Rect2(430, 230, 32, 24), Rect2(280, 410, 30, 26),
-		Rect2(435, 535, 30, 30), Rect2(810, 490, 32, 24), Rect2(870, 590, 28, 28),
+		Rect2(435, 535, 30, 30), Rect2(810, 490, 32, 24), Rect2(870, 590, 26, 28),
 		Rect2(1328, 388, 30, 30), Rect2(1465, 550, 30, 30), Rect2(1495, 732, 30, 30),
 		Rect2(1465, 916, 30, 30)
 	]:
@@ -41,6 +41,12 @@ func clear(parent: Node2D) -> void:
 	for child in parent.get_children():
 		if child is StaticBody2D and child.is_in_group(COLLISION_GROUP):
 			child.free()
+
+func add_wall(parent: Node2D, rect: Rect2, kind: String = "Landmark") -> void:
+	_add_wall(parent, rect, kind)
+
+func add_water_collision(parent: Node2D, layout: WorldLayout) -> void:
+	_add_water_collision(parent, layout)
 
 func _add_wall(parent: Node2D, rect: Rect2, kind: String = "Landmark") -> void:
 	var body := StaticBody2D.new()
