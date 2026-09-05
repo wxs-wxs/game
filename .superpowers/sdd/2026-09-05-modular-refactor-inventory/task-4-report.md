@@ -179,3 +179,24 @@ checker 修复后，Task 4 inventory gate 全部通过。报告历史部分保�
 - `inventory_domain_regression`、`resource_manager_facade_regression`、`resource_chain_smoke`、`inventory_action_regression`、`storage_drag_regression` 均保持各自 `*_OK`，退出码为 `0`。
 
 本轮其余验证：parser 退出码 `0`；checker fixture 输出 `ARCHITECTURE_CHECK_REGRESSION_OK`、退出码 `0`；项目 checker 输出 `ARCHITECTURE_BOUNDARY_OK`、退出码 `0`；`git diff --check` 退出码 `0`。三个 Godot smoke/regression 进程仍有既有资源/ObjectDB 泄漏 warning。未修改运行时代码或生成元数据；该问题属于后续 alias setter/测试契约修复 concern，不是 Task4 `adjust_*` 引入的回归。
+
+## Resource alias fix
+
+为恢复旧调用可替换字典的兼容语义，`ResourceManager` 的 `amounts`、`capacities`、`backpack`、`storage` 现通过显式 getter/setter 代理 canonical ledger/inventory 字典；初始化阶段使用显式 backing 字段，兼容 Godot 4.7（不使用不受支持的 `field` 标识符）。facade regression 新增 storage 替换后 camp-task 奖励写入可见的断言。
+
+验证命令与结果：
+
+| 检查 | 退出码 | 关键输出 |
+|---|---:|---|
+| Godot editor parser | 0 | `[ DONE ] update_scripts_classes`、`[ DONE ] loading_editor_layout` |
+| `resource_atomic_weather_regression.gd` | 0 | `RESOURCE_ATOMIC_WEATHER_REGRESSION_OK` |
+| `inventory_domain_regression.gd` | 0 | `INVENTORY_DOMAIN_REGRESSION_OK` |
+| `resource_manager_facade_regression.gd` | 0 | `RESOURCE_MANAGER_FACADE_REGRESSION_OK` |
+| `resource_chain_smoke.gd` | 0 | `RESOURCE_CHAIN_SMOKE_OK stone=6 wood=4 axe=true pickaxe=true` |
+| `inventory_action_regression.gd` | 0 | `INVENTORY_ACTION_REGRESSION_OK carry=3/12 action=pickup` |
+| `storage_drag_regression.gd` | 0 | `STORAGE_DRAG_REGRESSION_OK slots=12/12 transfer=wood` |
+| `tests/architecture/check_architecture_regression.ps1` | 0 | `ARCHITECTURE_CHECK_REGRESSION_OK` |
+| `tools/check_architecture.ps1 -Root .` | 0 | `ARCHITECTURE_BOUNDARY_OK` |
+| `git diff --check` | 0 | 无 whitespace error（仅已有 LF/CRLF 转换提示） |
+
+Godot smoke 仍有既有资源/ObjectDB/RID 泄漏 warning；未触碰音频、`.import`、`.uid` 或 `default_bus_layout.tres`。

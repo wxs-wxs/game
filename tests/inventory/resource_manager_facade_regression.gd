@@ -18,6 +18,13 @@ func _init() -> void:
 	var saved := legacy.to_dict()
 	direct.from_dict(saved)
 	assert(direct.to_dict() == saved)
+	var replacement_storage := {}
+	direct.storage = replacement_storage
+	assert(direct.inventory_state.storage == replacement_storage)
+	var storage_reward := direct.collect_rewards_atomic({"food": 1}, "camp_task")
+	assert(bool(storage_reward.get("ok", false)))
+	assert(int(replacement_storage.get("food", 0)) == 1)
+	assert(direct.storage == replacement_storage)
 	direct.amounts["wood"] = 6
 	assert(direct.ledger.amounts["wood"] == 6)
 	direct.backpack["fiber"] = 1

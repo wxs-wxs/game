@@ -48,8 +48,22 @@ const SOURCE_RULES := {
 var catalog: ResourceCatalog
 var ledger: ResourceLedger
 var inventory_state: InventoryState
-var amounts: Dictionary
-var capacities: Dictionary
+var _amounts_alias: Dictionary = {}
+var _capacities_alias: Dictionary = {}
+var _backpack_alias: Dictionary = {}
+var _storage_alias: Dictionary = {}
+var amounts: Dictionary:
+	get:
+		return ledger.amounts if ledger != null else _amounts_alias
+	set(value):
+		_amounts_alias = value
+		if ledger != null: ledger.amounts = value
+var capacities: Dictionary:
+	get:
+		return ledger.capacities if ledger != null else _capacities_alias
+	set(value):
+		_capacities_alias = value
+		if ledger != null: ledger.capacities = value
 var total_collected: int:
 	get:
 		return ledger.total_collected if ledger != null else 0
@@ -57,8 +71,18 @@ var total_collected: int:
 		if ledger != null: ledger.total_collected = value
 var tool_state: Dictionary = {"axe": false, "pickaxe": false}
 var tools: Dictionary
-var backpack: Dictionary
-var storage: Dictionary
+var backpack: Dictionary:
+	get:
+		return inventory_state.backpack if inventory_state != null else _backpack_alias
+	set(value):
+		_backpack_alias = value
+		if inventory_state != null: inventory_state.backpack = value
+var storage: Dictionary:
+	get:
+		return inventory_state.storage if inventory_state != null else _storage_alias
+	set(value):
+		_storage_alias = value
+		if inventory_state != null: inventory_state.storage = value
 var backpack_capacity: int:
 	get:
 		return inventory_state.backpack_capacity if inventory_state != null else BACKPACK_BASE_CAPACITY
