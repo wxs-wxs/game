@@ -25,6 +25,10 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 window/stretch/scale_mode="integer"
 
+[audio]
+
+default_bus_layout="res://default_bus_layout.tres"
+
 [input]
 
 pause_game={
