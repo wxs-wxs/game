@@ -398,7 +398,7 @@ func _setup_overlay_views() -> void:
 	crafting_view = CraftingView.new()
 	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel, "close_button": crafting_panel.get_node_or_null("CraftingCloseButton"), "recipe_buttons": recipe_buttons})
 	build_view = BuildView.new()
-	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel, "close_button": build_selection_panel.get_node_or_null("BuildSelectionCloseButton"), "tool_buttons": build_tool_buttons, "facility_buttons": facility_buttons, "facility_button": build_selection_panel.get_node_or_null("FacilityBuildButton"), "crafting_button": crafting_open_button})
+	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel, "dim": build_selection_dim, "close_button": build_selection_panel.get_node_or_null("BuildSelectionCloseButton"), "tool_buttons": build_tool_buttons, "facility_buttons": facility_buttons, "facility_button": build_selection_panel.get_node_or_null("FacilityBuildButton"), "crafting_button": crafting_open_button})
 	event_report_view = EventReportView.new()
 	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel, "report_panel": report_panel, "title_label": event_title_label, "body_label": event_body_label, "choice_buttons": event_choice_buttons, "report_content_label": report_content_label, "report_continue": report_continue_button})
 	pause_overlay = PauseOverlay.new()

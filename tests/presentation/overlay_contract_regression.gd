@@ -79,6 +79,7 @@ func _init() -> void:
 	assert(ui.crafting_view.panel == ui.crafting_panel)
 	assert(ui.build_view.panel == ui.build_selection_panel)
 	assert(ui.event_report_view.panel == ui.event_panel)
+	assert(ui.build_view.dim == ui.build_selection_dim)
 	assert(ui.backpack_view.slot_controls.size() == 12)
 	for slot in ui.storage_slots + ui.storage_backpack_slots:
 		assert(slot.transfer_owner == ui.storage_view)
