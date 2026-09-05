@@ -10,6 +10,7 @@ signal tool_selection_requested
 const WorldLayout = preload("res://scripts/world/map/world_layout.gd")
 const WorldCollisionBuilder = preload("res://scripts/world/map/world_collision_builder.gd")
 const WorldMapRenderer = preload("res://scripts/world/map/world_map_renderer.gd")
+const WorldInteractionRegistry = preload("res://scripts/world/interaction/world_interaction_registry.gd")
 const MAP_SIZE := WorldLayout.MAP_SIZE
 # Keep the room outside the outdoor map's full draw and collision range.  The
 # old x=1500 placement overlapped the eastern river and its collision polygon,
@@ -40,13 +41,13 @@ const RIVER_BANK_SWING := WorldLayout.RIVER_BANK_SWING
 var world_layout: WorldLayout = WorldLayout.new()
 var collision_builder: WorldCollisionBuilder = WorldCollisionBuilder.new()
 var map_renderer: WorldMapRenderer
+var interaction_registry: WorldInteractionRegistry = WorldInteractionRegistry.new()
 var map_size := world_layout.MAP_SIZE
 var game: GameManager
 var player: ExplorerPlayer
 var interactions: Array[InteractionPoint] = []
 var nearest: InteractionPoint
 var active_interaction: InteractionPoint
-var point_id_counts: Dictionary = {}
 var is_inside := false
 var outdoor_position := Vector2(180, 155)
 var interior_manager
@@ -59,10 +60,14 @@ func _init() -> void:
 	# Interaction props share one depth layer so their screen-space Y controls
 	# overlap: objects farther down the map are closer to the camera.
 	y_sort_enabled = true
+	interaction_registry.setup(self, null)
+	interactions = interaction_registry.points
 
 func setup(manager: GameManager) -> void:
 	game = manager
 	game.exploration_world = self
+	interaction_registry.setup(self, game)
+	interaction_registry.set_availability(_is_point_available)
 	_build_collisions()
 	_build_points()
 	if game != null and game.buildings != null:
@@ -95,24 +100,14 @@ func setup(manager: GameManager) -> void:
 	player.add_child(camera)
 	interior_manager = preload("res://scripts/interior_manager.gd").new(); interior_manager.name = "InteriorManager"; add_child(interior_manager)
 	build_mode = preload("res://scripts/build_mode_controller.gd").new(); build_mode.name = "BuildMode"; add_child(build_mode); build_mode.setup(self)
-	_restore_construction_sites()
+	interaction_registry.restore_construction_sites()
 	last_weather = game.weather
 	_refresh_audio_context()
 	visual_clock = 0.0
 	queue_redraw()
 
 func _restore_construction_sites() -> void:
-	if game == null or game.buildings == null: return
-	var project: Dictionary = game.buildings.active_construction()
-	if project.is_empty(): return
-	var id := str(project.get("id", ""))
-	if id.is_empty(): return
-	var site := preload("res://scripts/construction_site.gd").new()
-	add_child(site)
-	var saved_position: Variant = project.get("position", [game.outdoor_position.x, game.outdoor_position.y])
-	if saved_position is Array and saved_position.size() >= 2: site.position = Vector2(float(saved_position[0]), float(saved_position[1]))
-	site.setup(game, str(id), float(project.get("required", 1.0)))
-	site.progress = float(project.get("progress", 0.0))
+	interaction_registry.restore_construction_sites()
 
 func _process(delta: float) -> void:
 	# Keep the map atmosphere alive independently from the simulation clock. The
@@ -120,6 +115,7 @@ func _process(delta: float) -> void:
 	# making rain and marker pulses appear frozen in a screenshot.
 	visual_clock = fmod(visual_clock + maxf(delta, 0.0) * (0.22 if game != null and game.time.paused else 1.0), 100000.0)
 	queue_redraw()
+	active_interaction = interaction_registry.active_interaction
 	if map_renderer != null:
 		map_renderer.set_visual_clock(visual_clock)
 		map_renderer.set_marker_state(interactions, nearest, active_interaction, is_inside)
@@ -132,23 +128,18 @@ func _process(delta: float) -> void:
 	elif game.audio != null and not is_inside and active_interaction == null:
 		_refresh_audio_context()
 	if active_interaction != null:
-		if not active_interaction.interacting: active_interaction = null
+		if not active_interaction.interacting:
+			active_interaction = null
+			interaction_registry.active_interaction = null
 		else:
 			var result := active_interaction.tick_interaction(delta)
 			interaction_progress_changed.emit(active_interaction.display_name, active_interaction.interaction_progress / maxf(0.01, active_interaction.interaction_time))
 			if not active_interaction.interacting:
 				active_interaction = null
+				interaction_registry.active_interaction = null
 				interaction_changed.emit("")
 			return
-	var candidate: InteractionPoint
-	var best := INF
-	for point in interactions:
-		if not is_instance_valid(point): continue
-		if not _is_point_available(point): continue
-		var distance := player.global_position.distance_to(point.global_position)
-		if distance <= point.interaction_range + 12.0 and distance < best:
-			candidate = point
-			best = distance
+	var candidate := interaction_registry.nearest(player.global_position, INF)
 	if candidate != nearest:
 		nearest = candidate
 	var next_prompt := nearest.prompt_text() if nearest != null else ""
@@ -173,13 +164,16 @@ func try_interact() -> void:
 	var result := nearest.interact()
 	interaction_result.emit(str(result.get("message", result.get("reason", ""))))
 	interaction_changed.emit(nearest.prompt_text())
-	if bool(result.get("started", false)): active_interaction = nearest
+	if bool(result.get("started", false)):
+		active_interaction = nearest
+		interaction_registry.active_interaction = nearest
 
 func cancel_interaction() -> void:
 	if active_interaction != null:
 		active_interaction.cancel_interaction()
 		interaction_result.emit("已取消交互。")
 		active_interaction = null
+		interaction_registry.active_interaction = null
 		interaction_changed.emit(nearest.prompt_text() if nearest != null else "")
 
 func is_interacting() -> bool: return active_interaction != null and active_interaction.interacting
@@ -219,15 +213,11 @@ func _build_points() -> void:
 	_add_point(RuinSpot.new(), Vector2(1040, 515))
 
 func _add_point(point: InteractionPoint, at: Vector2) -> void:
-	var base_id := point.unique_id
-	var count := int(point_id_counts.get(base_id, 0))
-	point_id_counts[base_id] = count + 1
-	if count > 0: point.unique_id = "%s_%d" % [base_id, count + 1]
 	point.position = at
 	add_child(point)
 	point.setup(game)
 	point.interaction_completed.connect(_on_point_completed)
-	interactions.append(point)
+	interaction_registry.register(point)
 
 func register_outdoor_shelf() -> void:
 	for point in interactions:
@@ -249,7 +239,7 @@ func register_outdoor_workbench(at: Vector2 = Vector2(-99999, -99999)) -> void:
 func register_interior_point(point: InteractionPoint) -> void:
 	if point == null or not is_instance_valid(point): return
 	point.interaction_completed.connect(_on_point_completed)
-	interactions.append(point)
+	interaction_registry.register(point)
 
 func toggle_house() -> void:
 	if is_inside: exit_house()
@@ -343,49 +333,18 @@ func _random_grass_position(excluding: InteractionPoint) -> Vector2:
 	return Vector2.ZERO
 
 func serialize_state() -> Dictionary:
-	var interaction_data: Array = []
-	for point in interactions:
-		if not is_instance_valid(point): continue
-		var row := {"id":point.unique_id, "position":[point.position.x, point.position.y], "cooldown":point.cooldown_remaining, "uses_left":point.uses_left, "progress":point.interaction_progress if point.interacting else 0.0, "active":point.interacting, "visible":point.visible, "respawn":point.respawn_remaining}
-		if point is TreeSpot:
-			row["stump"] = point.is_stump
-			row["regrow"] = point.regrow_remaining
-		if point is FireplacePoint:
-			row["lit"] = point.lit
-		if point is BedPoint and point.unique_id == "house_bed":
-			row["rested"] = point.rested_this_day
-		interaction_data.append(row)
-	return {"in_house":is_inside, "outdoor_position":[outdoor_position.x, outdoor_position.y], "interactions":interaction_data}
+	return interaction_registry.serialize_state()
 
 func restore_state(data: Dictionary) -> void:
 	for child in get_children():
 		if child is ConstructionSite: child.queue_free()
-	_restore_construction_sites()
+	interaction_registry.restore_construction_sites()
 	var saved_position = data.get("outdoor_position", [180, 155])
 	if saved_position is Array and saved_position.size() >= 2: outdoor_position = Vector2(float(saved_position[0]), float(saved_position[1]))
-	var by_id := {}
-	active_interaction = null
-	for row in data.get("interactions", []): by_id[str(row.get("id", ""))] = row
 	if game != null and game.buildings != null and game.buildings.has("workbench") and not _has_outdoor_workbench():
 		register_outdoor_workbench()
-	for point in interactions:
-		if not is_instance_valid(point) or not by_id.has(point.unique_id): continue
-		var row: Dictionary = by_id[point.unique_id]
-		var saved_point_position: Variant = row.get("position", [])
-		if saved_point_position is Array and saved_point_position.size() >= 2:
-			point.position = Vector2(float(saved_point_position[0]), float(saved_point_position[1]))
-		point.cooldown_remaining = float(row.get("cooldown", 0.0)); point.uses_left = int(row.get("uses_left", -1)); point.interaction_progress = float(row.get("progress", 0.0)); point.interacting = bool(row.get("active", false)); point.respawn_remaining = float(row.get("respawn", 0.0))
-		if point is TreeSpot:
-			point.is_stump = bool(row.get("stump", false))
-			point.regrow_remaining = float(row.get("regrow", 0.0))
-			point.refresh_tree_art()
-		if point is FireplacePoint:
-			point._refresh_fire_visual()
-		if point is BedPoint and point.unique_id == "house_bed":
-			point.rested_this_day = bool(row.get("rested", false))
-		if bool(row.get("visible", true)): point.show()
-		else: point.hide()
-		if point.interacting: active_interaction = point
+	interaction_registry.restore_state(data)
+	active_interaction = interaction_registry.active_interaction
 	if bool(data.get("in_house", false)) and not is_inside: enter_house()
 	elif not bool(data.get("in_house", false)) and is_inside: exit_house()
 	_refresh_audio_context()
