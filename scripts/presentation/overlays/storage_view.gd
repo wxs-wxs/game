@@ -4,12 +4,31 @@ extends OverlayViewBase
 var capacity_label: Label
 var storage_buttons: Array[Button] = []
 var backpack_buttons: Array[Button] = []
+var storage_slot_refs: Array = []
+var backpack_slot_refs: Array = []
+var _wired := false
 
 func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
 	super.setup(parent, factory_argument, callback_map)
 	var close := callbacks.get("close_button") as Button
-	if close != null and not close.pressed.is_connected(_emit_close):
-		close.pressed.connect(_emit_close)
+	storage_slot_refs = callbacks.get("storage_slots", []) if callbacks.get("storage_slots", []) is Array else []
+	backpack_slot_refs = callbacks.get("backpack_slots", []) if callbacks.get("backpack_slots", []) is Array else []
+	if _wired:
+		return
+	if close != null: close.pressed.connect(_emit_close)
+	for slot in storage_slot_refs + backpack_slot_refs:
+		if slot != null and slot is Object and slot.has_method("configure"):
+			slot.transfer_owner = self
+	_wired = true
+
+func _can_storage_drop(payload: Dictionary, target_kind: String, target_key: String) -> bool:
+	var validator: Variant = callbacks.get("drop_validator")
+	if validator is Callable and (validator as Callable).is_valid():
+		return bool((validator as Callable).call(payload, target_kind, target_key))
+	return false
+
+func _handle_storage_drop(payload: Dictionary, target_kind: String, target_key: String) -> void:
+	_emit_intent({"kind":"storage_drop", "payload":payload, "target_kind":target_kind, "target_key":target_key})
 
 func _build() -> void:
 	panel = factory.panel(root, Vector2(24, 24), Vector2(912, 492), PixelTheme.PANEL_MID)

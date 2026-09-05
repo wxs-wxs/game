@@ -392,17 +392,17 @@ func _setup_overlay_views() -> void:
 	if hud == null:
 		return
 	backpack_view = BackpackView.new()
-	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel, "close_button": backpack_close_button})
+	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel, "close_button": backpack_close_button, "slots": backpack_slots, "action_buttons": {"use": item_action_menu.get_node_or_null("UseButton"), "cook": item_action_menu.get_node_or_null("CookButton"), "discard": item_action_menu.get_node_or_null("DiscardButton"), "confirm_discard": discard_dialog.get_node_or_null("ConfirmDiscardButton"), "cancel_discard": discard_dialog.get_node_or_null("CancelDiscardButton")}})
 	storage_view = StorageView.new()
-	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel, "close_button": storage_close_button, "storage_slots": storage_slots, "backpack_slots": storage_backpack_slots})
+	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel, "close_button": storage_close_button, "storage_slots": storage_slots, "backpack_slots": storage_backpack_slots, "drop_validator": Callable(self, "_can_storage_drop")})
 	crafting_view = CraftingView.new()
 	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel, "close_button": crafting_panel.get_node_or_null("CraftingCloseButton"), "recipe_buttons": recipe_buttons})
 	build_view = BuildView.new()
 	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel, "close_button": build_selection_panel.get_node_or_null("BuildSelectionCloseButton"), "tool_buttons": build_tool_buttons, "facility_buttons": facility_buttons, "facility_button": build_selection_panel.get_node_or_null("FacilityBuildButton"), "crafting_button": crafting_open_button})
 	event_report_view = EventReportView.new()
-	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel, "report_panel": report_panel, "event_choices": event_choice_buttons, "report_continue": report_continue_button})
+	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel, "report_panel": report_panel, "title_label": event_title_label, "body_label": event_body_label, "choice_buttons": event_choice_buttons, "report_content_label": report_content_label, "report_continue": report_continue_button})
 	pause_overlay = PauseOverlay.new()
-	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel, "resume_button": pause_panel.get_node_or_null("PauseResumeButton"), "explore_button": pause_panel.get_node_or_null("PauseExploreButton"), "save_button": pause_panel.get_node_or_null("PauseSaveButton"), "load_button": pause_panel.get_node_or_null("PauseLoadButton"), "exit_button": exit_button})
+	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel, "dim": pause_dim, "resume_button": pause_panel.get_node_or_null("PauseResumeButton"), "explore_button": pause_panel.get_node_or_null("PauseExploreButton"), "save_button": pause_panel.get_node_or_null("PauseSaveButton"), "load_button": pause_panel.get_node_or_null("PauseLoadButton"), "exit_button": exit_button})
 	for view in [backpack_view, storage_view, crafting_view, build_view, event_report_view, pause_overlay]:
 		if not view.intent_requested.is_connected(dispatch_intent):
 			view.intent_requested.connect(dispatch_intent)
@@ -434,6 +434,24 @@ func dispatch_intent(intent: Dictionary) -> void:
 			var result: Dictionary = game.resources.move_to_storage(transfer_key, 1) if str(intent.get("source", "")) == "backpack" else game.resources.move_to_backpack(transfer_key, 1)
 			_show_message(str(result.get("reason", "物品未转移。")), 1.5)
 			refresh()
+		"storage_drop":
+			var payload_variant: Variant = intent.get("payload", {})
+			var payload: Dictionary = payload_variant if payload_variant is Dictionary else {}
+			_handle_storage_drop(payload, str(intent.get("target_kind", "")), str(intent.get("target_key", "")))
+		"backpack_context":
+			_open_backpack_item_menu(int(intent.get("index", -1)))
+		"backpack_dismiss_context":
+			if item_action_menu != null: item_action_menu.visible = false
+		"backpack_use_action":
+			_use_backpack_action()
+		"backpack_cook_action":
+			_cook_backpack_action()
+		"backpack_discard_action":
+			_open_discard_dialog_from_action()
+		"backpack_confirm_discard":
+			_confirm_discard_quantity()
+		"backpack_cancel_discard":
+			_close_discard_dialog()
 		"craft_recipe":
 			_craft_recipe(str(intent.get("recipe", "")))
 		"craft_tool":
@@ -870,7 +888,6 @@ func _build_backpack_panel() -> void:
 		var row := index / 4
 		var cell := _panel(Vector2(30 + column * 144, 90 + row * 78), Vector2(132, 66), PANEL_LIGHT, backpack_panel)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
-		cell.gui_input.connect(_on_backpack_cell_gui_input.bind(index))
 		var item_icon := _icon(Vector2(50, 6), Vector2(32, 32), ICON_CHEST, cell)
 		item_icon.visible = false
 		var item_label := _label_in(cell, Vector2(9, 42), Vector2(80, 18), "空", 5, TEXT_MAIN)
@@ -892,13 +909,10 @@ func _build_backpack_action_menu() -> void:
 	item_action_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var use_button := _button_in(item_action_menu, Vector2(15, 31), Vector2(144, 27), "食用")
 	use_button.name = "UseButton"
-	use_button.pressed.connect(_use_backpack_action)
 	var cook_button := _button_in(item_action_menu, Vector2(15, 61), Vector2(144, 27), "烤熟")
 	cook_button.name = "CookButton"
-	cook_button.pressed.connect(_cook_backpack_action)
 	var discard_button := _button_in(item_action_menu, Vector2(15, 91), Vector2(144, 27), "丢弃")
 	discard_button.name = "DiscardButton"
-	discard_button.pressed.connect(_open_discard_dialog_from_action)
 	item_action_menu.visible = false
 
 func _build_discard_dialog() -> void:
@@ -921,10 +935,8 @@ func _build_discard_dialog() -> void:
 	discard_dialog.add_child(discard_quantity_spinbox)
 	var confirm := _button_in(discard_dialog, Vector2(30, 148), Vector2(126, 33), "确认丢弃")
 	confirm.name = "ConfirmDiscardButton"
-	confirm.pressed.connect(_confirm_discard_quantity)
 	var cancel := _button_in(discard_dialog, Vector2(180, 148), Vector2(126, 33), "取消")
 	cancel.name = "CancelDiscardButton"
-	cancel.pressed.connect(_close_discard_dialog)
 	discard_dialog.visible = false
 
 func _build_storage_panel() -> void:
@@ -1072,7 +1084,6 @@ func _build_report_panel() -> void:
 	report_content_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	report_content_label.clip_text = true
 	report_continue_button = _button_in(report_panel, Vector2(177, 294), Vector2(252, 36), "进入清晨")
-	report_continue_button.pressed.connect(_on_report_continue)
 	report_panel.visible = false
 
 func _open_pause_overlay(kind: String) -> void:
@@ -1132,23 +1143,28 @@ func show_event(event: Dictionary) -> void:
 	_report_open = false
 	_close_pause_overlay("report")
 	_open_pause_overlay("event")
-	if event_report_view != null: event_report_view.open({"mode":"event"})
 	var data: Dictionary = event.get("data", {}) if event.get("data", {}) is Dictionary else {}
-	event_title_label.text = str(data.get("title", "夜间事件"))
-	event_body_label.text = str(data.get("text", "夜里发生了一些事情。"))
+	var title := str(data.get("title", "夜间事件"))
+	var body := str(data.get("text", "夜里发生了一些事情。"))
 	var choices: Array = data.get("choices", [])
+	var choice_text: Array[String] = []
+	var choice_enabled: Array[bool] = []
 	for index in range(event_choice_buttons.size()):
-		var button: Button = event_choice_buttons[index]
 		if index >= choices.size():
-			button.visible = false
+			choice_text.append("")
+			choice_enabled.append(false)
 			continue
 		var choice: Dictionary = choices[index] if choices[index] is Dictionary else {}
 		var cost: Dictionary = choice.get("cost", {}) if choice.get("cost", {}) is Dictionary else {}
-		button.visible = true
-		button.text = "%s\n%s" % [str(choice.get("label", "选择")), _cost_text(cost) if not cost.is_empty() else "不消耗资源"]
-		button.disabled = not game.resources.can_afford(cost)
-	event_panel.visible = true
-	report_panel.visible = false
+		choice_text.append("%s\n%s" % [str(choice.get("label", "选择")), _cost_text(cost) if not cost.is_empty() else "不消耗资源"])
+		choice_enabled.append(game.resources.can_afford(cost))
+	if event_report_view != null:
+		event_report_view.open({"mode":"event", "title":title, "body":body, "choices":choice_text, "choice_enabled":choice_enabled})
+	else:
+		event_title_label.text = title
+		event_body_label.text = body
+		event_panel.visible = true
+		report_panel.visible = false
 
 func show_report(lines: Array[String], terminal: bool = false) -> void:
 	if report_panel == null:
@@ -1157,12 +1173,16 @@ func show_report(lines: Array[String], terminal: bool = false) -> void:
 	_event_open = false
 	_close_pause_overlay("event")
 	_open_pause_overlay("report")
-	if event_report_view != null: event_report_view.open({"mode":"report", "content":"\n".join(lines)})
-	report_content_label.text = "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
-	report_continue_button.text = "结束游戏" if terminal else "进入清晨"
-	report_continue_button.disabled = terminal
-	report_panel.visible = true
-	event_panel.visible = false
+	var content := "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
+	var continue_text := "结束游戏" if terminal else "进入清晨"
+	if event_report_view != null:
+		event_report_view.open({"mode":"report", "content":content, "continue_text":continue_text, "terminal":terminal})
+	else:
+		report_content_label.text = content
+		report_continue_button.text = continue_text
+		report_continue_button.disabled = terminal
+		report_panel.visible = true
+		event_panel.visible = false
 
 func toggle_log_panel() -> void:
 	if _event_open or _report_open:
@@ -1187,12 +1207,15 @@ func _close_standard_overlays() -> void:
 	_close_backpack_context_menus()
 	if _backpack_open:
 		_backpack_open = false
+		if backpack_view != null: backpack_view.close()
 		_close_pause_overlay("backpack")
 	if _storage_open:
 		_storage_open = false
+		if storage_view != null: storage_view.close()
 		_close_pause_overlay("storage")
 	if _crafting_open:
 		_crafting_open = false
+		if crafting_view != null: crafting_view.close()
 		_close_pause_overlay("crafting")
 	if _shortcut_open:
 		_shortcut_open = false
@@ -1211,10 +1234,6 @@ func refresh() -> void:
 	_refresh_backpack_panel()
 	_refresh_crafting_panel()
 	_refresh_storage_panel()
-	if pause_panel != null:
-		pause_panel.visible = paused_by_menu
-	if pause_dim != null:
-		pause_dim.visible = paused_by_menu
 	if message_label != null and message_until > 0.0 and message_until <= current_time:
 		message_label.text = ""
 		message_until = 0.0
@@ -1296,14 +1315,6 @@ func _update_buttons() -> void:
 	var overlay_open := _backpack_open or _storage_open or _crafting_open or _shortcut_open or _log_open or _build_selection_open or _event_open or _report_open
 	if backpack_button != null:
 		backpack_button.visible = not overlay_open
-	if backpack_panel != null:
-		# The standalone backpack view is replaced by the right-hand transfer grid
-		# while a storage device is open.
-		backpack_panel.visible = _backpack_open and not _storage_open
-	if storage_panel != null:
-		storage_panel.visible = _storage_open
-	if crafting_panel != null:
-		crafting_panel.visible = _crafting_open
 	if backpack_view != null: backpack_view.refresh({})
 	if storage_view != null: storage_view.refresh({})
 	if crafting_view != null: crafting_view.refresh({})
@@ -1331,10 +1342,6 @@ func _update_buttons() -> void:
 		pause_button.text = "▶" if paused else "Ⅱ"
 		pause_button.disabled = str(game.phase) == "ended"
 		pause_button.visible = not overlay_open
-	if build_selection_panel != null:
-		build_selection_panel.visible = _build_selection_open
-	if build_selection_dim != null:
-		build_selection_dim.visible = _build_selection_open
 	_refresh_build_selection()
 	if shortcut_button != null:
 		shortcut_button.visible = not overlay_open
@@ -1346,10 +1353,6 @@ func _update_buttons() -> void:
 		log_panel.visible = _log_open
 	if log_content_label != null and _log_open:
 		_refresh_log_panel()
-	if event_panel != null:
-		event_panel.visible = _event_open
-	if report_panel != null:
-		report_panel.visible = _report_open
 	if interact_button != null:
 		var nearby := world != null and world.nearest != null and not inside
 		var can_interact := nearby and not paused
@@ -1406,6 +1409,9 @@ func close_storage() -> void:
 
 func close_overlay() -> bool:
 	if _event_open or _report_open:
+		return true
+	if paused_by_menu:
+		_on_resume()
 		return true
 	if _build_selection_open:
 		_close_build_selection()
@@ -1532,7 +1538,8 @@ func _refresh_storage_transfer_slot(slot, kind: String, key: String, amount: int
 	if slot == null:
 		return
 	var visible_key := key if amount > 0 else ""
-	slot.configure(kind, visible_key, amount, unlocked, self)
+	var transfer_owner: Object = storage_view if storage_view != null else self
+	slot.configure(kind, visible_key, amount, unlocked, transfer_owner)
 	if slot.item_label != null:
 		slot.item_label.text = game.resources.display_name(visible_key) if amount > 0 else ("空" if unlocked else "锁定")
 		slot.item_label.add_theme_color_override("font_color", TEXT_MAIN if unlocked else TEXT_MUTED)
@@ -1734,9 +1741,15 @@ func toggle_pause_menu() -> void:
 	paused_by_menu = not paused_by_menu
 	if game.audio != null and game.audio.has_method("push_snapshot") and game.audio.has_method("pop_snapshot"):
 		if paused_by_menu:
+			if pause_overlay != null: pause_overlay.open({})
 			game.audio.push_snapshot("pause")
 		else:
+			if pause_overlay != null: pause_overlay.close()
 			game.audio.pop_snapshot("pause")
+	elif paused_by_menu:
+		if pause_overlay != null: pause_overlay.open({})
+	else:
+		if pause_overlay != null: pause_overlay.close()
 	game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 	refresh()
 
@@ -1745,6 +1758,7 @@ func _on_resume() -> void:
 		paused_by_menu = false
 		return
 	paused_by_menu = false
+	if pause_overlay != null: pause_overlay.close()
 	if game.audio != null and game.audio.has_method("pop_snapshot"):
 		game.audio.pop_snapshot("pause")
 	game.time.paused = _overlay_pause_depth > 0
@@ -1776,6 +1790,7 @@ func load_game() -> void:
 		game.audio.emit_event("ui.load_complete")
 	_show_message("存档已读取" if ok else "没有找到存档", 3.0)
 	paused_by_menu = false
+	if pause_overlay != null: pause_overlay.close()
 	if game.time != null:
 		game.time.paused = false
 	if game.audio != null and game.audio.has_method("pop_snapshot"):
@@ -1823,14 +1838,13 @@ func toggle_build_mode() -> void:
 func _on_backpack_cell_gui_input(event: InputEvent, index: int) -> void:
 	if not event is InputEventMouseButton:
 		return
-	var mouse_event: InputEventMouseButton = event
+	var mouse_event := event as InputEventMouseButton
 	if not mouse_event.pressed:
 		return
-	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-		_open_backpack_item_menu(index)
+	var kind := "backpack_context" if mouse_event.button_index == MOUSE_BUTTON_RIGHT else "backpack_dismiss_context"
+	dispatch_intent({"kind":kind, "index":index})
+	if get_viewport() != null:
 		get_viewport().set_input_as_handled()
-	elif mouse_event.button_index == MOUSE_BUTTON_LEFT and item_action_menu != null:
-		item_action_menu.visible = false
 
 func _open_backpack_item_menu(index: int) -> void:
 	if backpack_panel == null or index < 0 or index >= backpack_slots.size():

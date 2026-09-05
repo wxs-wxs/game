@@ -3,17 +3,19 @@ extends OverlayViewBase
 
 var hint_label: Label
 var recipe_buttons: Dictionary = {}
+var _wired := false
 
 func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
 	super.setup(parent, factory_argument, callback_map)
+	if _wired:
+		return
 	var close := callbacks.get("close_button") as Button
-	if close != null and not close.pressed.is_connected(_emit_close):
-		close.pressed.connect(_emit_close)
+	if close != null: close.pressed.connect(_emit_close)
 	var refs: Dictionary = callbacks.get("recipe_buttons", {}) if callbacks.get("recipe_buttons", {}) is Dictionary else {}
 	for recipe_id in refs:
 		var button := refs[recipe_id] as Button
-		if button != null and not button.pressed.is_connected(_craft.bind(str(recipe_id))):
-			button.pressed.connect(_craft.bind(str(recipe_id)))
+		if button != null: button.pressed.connect(_craft.bind(str(recipe_id)))
+	_wired = true
 
 func _craft(recipe_id: String) -> void:
 	_emit_intent({"kind":"craft_recipe", "recipe":recipe_id})

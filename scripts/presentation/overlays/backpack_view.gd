@@ -3,12 +3,48 @@ extends OverlayViewBase
 
 var content_label: Label
 var item_buttons: Array[Button] = []
+var slot_controls: Array = []
+var _wired := false
 
 func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
 	super.setup(parent, factory_argument, callback_map)
 	var close := callbacks.get("close_button") as Button
-	if close != null and not close.pressed.is_connected(_emit_close):
+	slot_controls = callbacks.get("slots", []) if callbacks.get("slots", []) is Array else []
+	if _wired:
+		return
+	if close != null:
 		close.pressed.connect(_emit_close)
+	var action_buttons: Dictionary = callbacks.get("action_buttons", {}) if callbacks.get("action_buttons", {}) is Dictionary else {}
+	var use_button := action_buttons.get("use") as Button
+	if use_button != null: use_button.pressed.connect(func(): _emit_intent({"kind":"backpack_use_action"}))
+	var cook_button := action_buttons.get("cook") as Button
+	if cook_button != null: cook_button.pressed.connect(func(): _emit_intent({"kind":"backpack_cook_action"}))
+	var discard_button := action_buttons.get("discard") as Button
+	if discard_button != null: discard_button.pressed.connect(func(): _emit_intent({"kind":"backpack_discard_action"}))
+	var confirm_button := action_buttons.get("confirm_discard") as Button
+	if confirm_button != null: confirm_button.pressed.connect(func(): _emit_intent({"kind":"backpack_confirm_discard"}))
+	var cancel_button := action_buttons.get("cancel_discard") as Button
+	if cancel_button != null: cancel_button.pressed.connect(func(): _emit_intent({"kind":"backpack_cancel_discard"}))
+	for index in range(slot_controls.size()):
+		var slot_variant: Variant = slot_controls[index]
+		var slot: Dictionary = slot_variant if slot_variant is Dictionary else {}
+		var cell := slot.get("cell") as Control
+		if cell != null:
+			cell.gui_input.connect(_on_slot_gui_input.bind(index))
+	_wired = true
+
+func _on_slot_gui_input(event: InputEvent, index: int) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse_event := event as InputEventMouseButton
+	if not mouse_event.pressed:
+		return
+	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+		_emit_intent({"kind":"backpack_context", "index":index})
+	elif mouse_event.button_index == MOUSE_BUTTON_LEFT:
+		_emit_intent({"kind":"backpack_dismiss_context"})
+	if root != null and root.get_viewport() != null:
+		root.get_viewport().set_input_as_handled()
 
 func _build() -> void:
 	panel = factory.panel(root, Vector2(171, 42), Vector2(618, 462), PixelTheme.PANEL_MID)

@@ -9,12 +9,12 @@ var source_kind := ""
 var item_key := ""
 var amount := 0
 var unlocked := true
-var transfer_owner: Node
+var transfer_owner: Object
 var item_icon: TextureRect
 var item_label: Label
 var count_label: Label
 
-func configure(kind: String, key: String, quantity: int, can_use: bool, owner: Node) -> void:
+func configure(kind: String, key: String, quantity: int, can_use: bool, owner: Object) -> void:
 	source_kind = kind
 	item_key = key
 	amount = maxi(0, quantity)

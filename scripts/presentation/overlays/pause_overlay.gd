@@ -1,8 +1,27 @@
 class_name PauseOverlay
 extends OverlayViewBase
 
+var dim: Control
+var _wired := false
+
+func open(snapshot: Dictionary) -> void:
+	super.open(snapshot)
+	if dim != null: dim.visible = true
+
+func refresh(snapshot: Dictionary) -> void:
+	super.refresh(snapshot)
+	if dim != null: dim.visible = _open
+
+func close() -> void:
+	super.close()
+	if dim != null: dim.visible = false
+
 func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) -> void:
 	super.setup(parent, factory_argument, callback_map)
+	var callback_dim := callbacks.get("dim") as Control
+	if callback_dim != null: dim = callback_dim
+	if _wired:
+		return
 	var resume := callbacks.get("resume_button") as Button
 	if resume != null: resume.pressed.connect(func(): _emit_intent({"kind":"resume"}))
 	var explore := callbacks.get("explore_button") as Button
@@ -13,9 +32,10 @@ func setup(parent: Control, factory_argument: Object, callback_map: Dictionary) 
 	if load != null: load.pressed.connect(func(): _emit_intent({"kind":"load_game"}))
 	var exit := callbacks.get("exit_button") as Button
 	if exit != null: exit.pressed.connect(func(): _emit_intent({"kind":"exit_game"}))
+	_wired = true
 
 func _build() -> void:
-	var dim := ColorRect.new()
+	dim = ColorRect.new()
 	dim.position = Vector2.ZERO
 	dim.size = Vector2(960, 540)
 	dim.color = Color("081013", 0.58)
