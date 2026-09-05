@@ -48,8 +48,6 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 	var payload_key := str(payload.get("key", ""))
 	if payload_kind.is_empty() or payload_kind == source_kind or payload_key.is_empty():
 		return false
-	if not item_key.is_empty() and item_key != payload_key:
-		return false
 	if transfer_owner != null and transfer_owner.has_method("_can_storage_drop"):
 		return bool(transfer_owner.call("_can_storage_drop", payload, source_kind, item_key))
 	return true

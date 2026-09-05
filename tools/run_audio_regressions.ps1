@@ -18,6 +18,7 @@ if ($godotConsole -eq $null) {
 }
 $tests = @(
     "tests/audio_catalog_regression.gd",
+    "tests/audio_asset_selection_regression.gd",
     "tests/audio_service_regression.gd",
     "tests/audio_save_regression.gd",
     "tests/audio_gameplay_regression.gd"

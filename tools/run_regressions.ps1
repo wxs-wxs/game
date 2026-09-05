@@ -23,6 +23,7 @@ $tests = @(
     "tests/campfire_fuel_regression.gd",
     "tests/fire_and_depth_regression.gd",
     "tests/resource_atomic_weather_regression.gd",
+    "tests/backpack_capacity_message_regression.gd",
     "tests/hud_interaction_overlay_regression.gd",
     "tests/storage_drag_regression.gd",
     "tests/save_phase_regression.gd",

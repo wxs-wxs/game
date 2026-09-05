@@ -169,22 +169,34 @@ func collect_from_source(key: String, delta: int, source_id: String = "") -> int
 		total_collected += actual
 	return actual
 
-func can_collect_rewards(rewards: Dictionary) -> bool:
+func collect_rewards_preflight(rewards: Dictionary, source_id: String = "") -> Dictionary:
+	if rewards.is_empty():
+		return {"ok":true, "reason":"奖励可领取。"}
 	var simulated := backpack.duplicate()
 	var used := backpack_slots_used()
 	for key in rewards:
 		var item := str(key)
 		var amount := maxi(0, int(rewards[key]))
 		if amount == 0: continue
-		if not ITEM_KEYS.has(item): return false
+		if not ITEM_KEYS.has(item):
+			return {"ok":false, "reason":"无法携带未知物品：%s。" % item}
+		if not can_collect_from_source(item, source_id):
+			return {"ok":false, "reason":"该来源无法提供%s。" % display_name(item)}
 		var current := int(simulated.get(item, 0))
-		if current + amount > STACK_MAX: return false
-		if int(amounts.get(item, 0)) + amount > int(capacities.get(item, STACK_MAX)): return false
+		if current + amount > STACK_MAX:
+			return {"ok":false, "reason":"%s堆叠已达到每格上限 %d。" % [display_name(item), STACK_MAX]}
+		var capacity := int(capacities.get(item, STACK_MAX))
+		if int(amounts.get(item, 0)) + amount > capacity:
+			return {"ok":false, "reason":"%s已达到储备上限 %d。" % [display_name(item), capacity]}
 		if current == 0:
 			used += 1
-			if used > backpack_slot_capacity(): return false
+			if used > backpack_slot_capacity():
+				return {"ok":false, "reason":"携带空间不足，请先整理背包。"}
 		simulated[item] = current + amount
-	return true
+	return {"ok":true, "reason":"奖励可领取。"}
+
+func can_collect_rewards(rewards: Dictionary) -> bool:
+	return bool(collect_rewards_preflight(rewards).get("ok", false))
 
 func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dictionary:
 	if rewards.is_empty():
@@ -208,12 +220,9 @@ func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dict
 				return {"ok":false, "reason":"营地奖励存储失败。", "added":{}}
 			stored[storage_id] = storage_amount
 		return {"ok":true, "reason":"奖励已存入营地。", "added":stored}
-	if not can_collect_rewards(rewards):
-		return {"ok":false, "reason":"携带空间不足，请先整理背包。", "added":{}}
-	for key in rewards:
-		var id := str(key)
-		if int(rewards[key]) > 0 and not can_collect_from_source(id, source_id):
-			return {"ok":false, "reason":"该来源无法提供此奖励。", "added":{}}
+	var preflight := collect_rewards_preflight(rewards, source_id)
+	if not bool(preflight.get("ok", false)):
+		return {"ok":false, "reason":str(preflight.get("reason", "携带空间不足，请先整理背包。")), "added":{}}
 	var added: Dictionary = {}
 	for key in rewards:
 		var id := str(key)

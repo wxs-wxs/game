@@ -163,8 +163,10 @@ func _complete_interaction() -> Dictionary:
 		return {"ok":false, "message":missing_tools_text(), "failed":true, "locked":true}
 	if not game.resources.can_afford(required_resources):
 		return {"ok":false, "message":game.resources.missing_cost_text(required_resources), "failed":true}
-	if not reward.is_empty() and not game.resources.can_collect_rewards(reward):
-		return {"ok":false, "message":"携带空间不足，请先整理背包。", "failed":true}
+	if not reward.is_empty():
+		var reward_check := game.resources.collect_rewards_preflight(reward, unique_id)
+		if not bool(reward_check.get("ok", false)):
+			return {"ok":false, "message":str(reward_check.get("reason", "携带空间不足，请先整理背包。")), "failed":true}
 	var fire_was_lit := false
 	if unique_id == "campfire":
 		fire_was_lit = game.is_fire_active("campfire")

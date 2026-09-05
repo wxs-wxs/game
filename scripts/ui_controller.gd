@@ -15,6 +15,9 @@ var upgrade_button: Button
 var build_button: Button
 var pause_panel: Panel
 var exit_button: Button
+var audio_settings_panel: Panel
+var audio_settings_close_button: Button
+var sfx_toggle: CheckButton
 
 var paused_by_menu := false
 var message_until := 0.0
@@ -111,6 +114,7 @@ var report_content_label: Label
 var report_continue_button: Button
 var _event_open := false
 var _report_open := false
+var _audio_settings_open := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
@@ -158,6 +162,7 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	_log_open = false
 	_event_open = false
 	_report_open = false
+	_audio_settings_open = false
 	message_until = 0.0
 	_last_prompt = ""
 	_clear_hud()
@@ -206,6 +211,9 @@ func _clear_hud() -> void:
 	hud = null
 	pause_panel = null
 	exit_button = null
+	audio_settings_panel = null
+	audio_settings_close_button = null
+	sfx_toggle = null
 	feedback_panel = null
 	survivor_panel = null
 	survivor_name_label = null
@@ -474,6 +482,7 @@ func _build_hud() -> void:
 	interaction_panel.visible = false
 
 	_build_pause_panel()
+	_build_audio_settings_panel()
 	_build_backpack_panel()
 	_build_crafting_panel()
 	_build_storage_panel()
@@ -693,8 +702,12 @@ func _build_pause_panel() -> void:
 	save.pressed.connect(save_game)
 	var load := _button_in(pause_panel, Vector2(219, 153), Vector2(174, 42), "读取")
 	load.pressed.connect(load_game)
-	var build := _button_in(pause_panel, Vector2(33, 207), Vector2(360, 42), "返回探索")
+	var build := _button_in(pause_panel, Vector2(33, 207), Vector2(174, 42), "返回探索")
 	build.pressed.connect(_on_resume)
+	var settings := _button_in(pause_panel, Vector2(219, 207), Vector2(174, 42), "设置")
+	settings.name = "AudioSettingsButton"
+	settings.tooltip_text = "调整游戏声音设置"
+	settings.pressed.connect(_open_audio_settings)
 	exit_button = _button_in(pause_panel, Vector2(33, 261), Vector2(360, 42), "退出游戏")
 	exit_button.tooltip_text = "退出游戏"
 	exit_button.pressed.connect(exit_game)
@@ -702,6 +715,36 @@ func _build_pause_panel() -> void:
 	close.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	pause_dim.visible = false
 	pause_panel.hide()
+
+func _build_audio_settings_panel() -> void:
+	audio_settings_panel = _panel(Vector2(318, 150), Vector2(324, 240), PANEL_MID, hud)
+	audio_settings_panel.name = "AudioSettingsPanel"
+	audio_settings_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	audio_settings_panel.z_index = 35
+	_label_in(audio_settings_panel, Vector2(24, 18), Vector2(180, 30), "设置", 9, TEXT_ACCENT)
+	audio_settings_close_button = _button_in(audio_settings_panel, Vector2(222, 16), Vector2(78, 30), "关闭")
+	audio_settings_close_button.name = "AudioSettingsCloseButton"
+	audio_settings_close_button.pressed.connect(_close_audio_settings)
+	var hint := _label_in(audio_settings_panel, Vector2(24, 62), Vector2(276, 24), "声音选项", 5, TEXT_MUTED)
+	hint.clip_text = true
+	sfx_toggle = CheckButton.new()
+	sfx_toggle.name = "SfxToggle"
+	sfx_toggle.position = Vector2(24, 96)
+	sfx_toggle.size = Vector2(276, 42)
+	sfx_toggle.text = "游戏声音"
+	sfx_toggle.tooltip_text = "开启或关闭全部游戏声音，包括背景音乐"
+	sfx_toggle.button_pressed = _sfx_enabled()
+	sfx_toggle.add_theme_font_size_override("font_size", PixelTheme.FONT_SIZE_BODY)
+	sfx_toggle.add_theme_color_override("font_color", TEXT_MAIN)
+	sfx_toggle.add_theme_color_override("font_hover_color", Color.WHITE)
+	sfx_toggle.add_theme_color_override("font_pressed_color", TEXT_ACCENT)
+	sfx_toggle.add_theme_color_override("font_outline_color", Color("081516", 0.92))
+	sfx_toggle.add_theme_constant_override("outline_size", 2)
+	sfx_toggle.focus_mode = Control.FOCUS_ALL
+	sfx_toggle.mouse_filter = Control.MOUSE_FILTER_STOP
+	sfx_toggle.toggled.connect(_on_sfx_toggled)
+	audio_settings_panel.add_child(sfx_toggle)
+	audio_settings_panel.visible = false
 
 func _build_backpack_panel() -> void:
 	backpack_panel = _panel(Vector2(171, 42), Vector2(618, 462), PANEL_MID, hud)
@@ -1032,6 +1075,8 @@ func close_log_panel() -> void:
 
 func _close_standard_overlays() -> void:
 	_close_backpack_context_menus()
+	if _audio_settings_open:
+		_close_audio_settings()
 	if _backpack_open:
 		_backpack_open = false
 		_close_pause_overlay("backpack")
@@ -1121,7 +1166,7 @@ func refresh() -> void:
 func _update_buttons() -> void:
 	var inside := bool(game.in_house) if game != null else false
 	var paused := _is_paused()
-	var overlay_open := _backpack_open or _storage_open or _crafting_open or _shortcut_open or _log_open or _build_selection_open or _event_open or _report_open
+	var overlay_open := _backpack_open or _storage_open or _crafting_open or _shortcut_open or _log_open or _build_selection_open or _event_open or _report_open or _audio_settings_open
 	if backpack_button != null:
 		backpack_button.visible = not overlay_open
 	if backpack_panel != null:
@@ -1172,6 +1217,10 @@ func _update_buttons() -> void:
 		event_panel.visible = _event_open
 	if report_panel != null:
 		report_panel.visible = _report_open
+	if audio_settings_panel != null:
+		audio_settings_panel.visible = _audio_settings_open
+	if sfx_toggle != null:
+		sfx_toggle.set_pressed_no_signal(_sfx_enabled())
 	if interact_button != null:
 		var nearby := world != null and world.nearest != null and not inside
 		var can_interact := nearby and not paused
@@ -1227,6 +1276,9 @@ func close_overlay() -> bool:
 	if _build_selection_open:
 		_close_build_selection()
 		return true
+	if _audio_settings_open:
+		_close_audio_settings()
+		return true
 	if _log_open:
 		close_log_panel()
 		return true
@@ -1251,6 +1303,33 @@ func _on_storage_open_requested() -> void:
 	_storage_open = true
 	_open_pause_overlay("storage")
 	refresh()
+
+func _sfx_enabled() -> bool:
+	if game == null or game.audio == null or not game.audio.has_method("to_settings_dict"):
+		return true
+	return bool(game.audio.to_settings_dict().get("sfx_enabled", true))
+
+func _open_audio_settings() -> void:
+	if audio_settings_panel == null:
+		return
+	_audio_settings_open = true
+	if sfx_toggle != null:
+		sfx_toggle.set_pressed_no_signal(_sfx_enabled())
+	audio_settings_panel.visible = true
+
+func _close_audio_settings() -> void:
+	_audio_settings_open = false
+	if audio_settings_panel != null:
+		audio_settings_panel.visible = false
+
+func _on_sfx_toggled(enabled: bool) -> void:
+	if game == null or game.audio == null or not game.audio.has_method("apply_settings"):
+		return
+	var data: Dictionary = game.audio.to_settings_dict() if game.audio.has_method("to_settings_dict") else {}
+	data["sfx_enabled"] = enabled
+	game.audio.apply_settings(data)
+	if game.audio.has_method("save_user_settings"):
+		game.audio.save_user_settings()
 
 func _refresh_backpack_panel() -> void:
 	if backpack_content_label == null or game == null or game.resources == null:

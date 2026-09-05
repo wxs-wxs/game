@@ -1,12 +1,14 @@
 class_name AudioSettings
 extends RefCounted
 
-const KEYS := ["master", "music", "ambience", "sfx"]
+const KEYS := ["master", "music", "ambience", "sfx", "sfx_enabled"]
 
 var master: float = 1.0
 var music: float = 1.0
 var ambience: float = 1.0
 var sfx: float = 1.0
+# Retain the saved key for compatibility; the UI switch now controls all audio.
+var sfx_enabled: bool = true
 
 func _init(data: Dictionary = {}) -> void:
 	apply_dict(data)
@@ -14,7 +16,10 @@ func _init(data: Dictionary = {}) -> void:
 func apply_dict(data: Dictionary) -> void:
 	for key in KEYS:
 		if data.has(key):
-			set(key, clampf(float(data[key]), 0.0, 1.0))
+			if key == "sfx_enabled":
+				sfx_enabled = bool(data[key])
+			else:
+				set(key, clampf(float(data[key]), 0.0, 1.0))
 
 func to_dict() -> Dictionary:
 	return {
@@ -22,6 +27,7 @@ func to_dict() -> Dictionary:
 		"music": music,
 		"ambience": ambience,
 		"sfx": sfx,
+		"sfx_enabled": sfx_enabled,
 	}
 
 func load_from_config(path: String = "user://audio_settings.cfg") -> bool:

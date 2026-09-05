@@ -50,6 +50,8 @@ func set_music(id: String, stream: AudioStream, volume_db: float = 0.0) -> bool:
 func _configure_loop(stream: AudioStream) -> void:
 	if stream is AudioStreamWAV:
 		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+	elif stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = true
 
 func stop() -> void:
 	active_music_id = ""

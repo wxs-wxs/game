@@ -40,8 +40,8 @@ func _init() -> void:
 	assert(service.event_log.back().result == "missing")
 	var fallback_result := service.emit_event("ui.open")
 	assert(fallback_result == "headless")
-	assert(service.event_log.back().fallback == true)
-	assert(service.event_log.back().resolved_id == "ui.confirm")
+	assert(service.event_log.back().fallback == false, "ui.open now uses its selected Kenney asset directly")
+	assert(service.event_log.back().resolved_id == "ui.open")
 	assert(service._sfx._players.is_empty(), "headless mode must not create players")
 	assert(service._stream_for_cue(AudioCue.new()) is AudioStreamWAV, "missing streams use silent WAV fallback")
 
@@ -141,6 +141,10 @@ func _init() -> void:
 	get_root().add_child(music)
 	music.set_music("a", wav)
 	assert(wav is AudioStreamWAV and wav.loop_mode == AudioStreamWAV.LOOP_FORWARD, "music streams must loop in the controller")
+	var ogg := load("res://assets/audio/music/exploration_day.ogg") as AudioStreamOggVorbis
+	assert(ogg != null, "selected music asset must load as OGG")
+	music.set_music("ogg", ogg)
+	assert(ogg.loop, "OGG music streams must loop in the controller")
 	music.set_music("base_volume", wav, -8.0)
 	assert(is_equal_approx(music.last_volume_db, -8.0), "music must retain cue base volume")
 	music.set_music("b", wav)

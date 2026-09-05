@@ -120,8 +120,9 @@ func set_world_state(state: Dictionary) -> void:
 	_sync_controller_modes()
 	world_state = normalized
 	var music_id := _music_id_for_state(world_state)
-	var music_stream := _stream_for_id(music_id, "music")
-	var music_cue := _cue_for_id(music_id, "music")
+	var music_catalog_id := "music.%s" % music_id
+	var music_stream := _stream_for_id(music_catalog_id, "music")
+	var music_cue := _cue_for_id(music_catalog_id, "music")
 	_music.set_music(music_id, music_stream, music_cue.base_volume_db if music_cue != null else 0.0)
 	active_music_id = _music.active_music_id
 	var layers := _ambience_layers_for_state(world_state)
@@ -179,20 +180,31 @@ func to_dict() -> Dictionary:
 func apply_settings(data: Dictionary) -> void:
 	_initialize()
 	settings.apply_dict(data)
-	_snapshots.set_base_volumes(settings.to_dict())
+	_snapshots.set_base_volumes(_effective_settings_dict())
 	_recompute_snapshots()
 
 func load_user_settings() -> bool:
 	_initialize()
 	var loaded := settings.load_from_config()
 	if loaded:
-		_snapshots.set_base_volumes(settings.to_dict())
+		_snapshots.set_base_volumes(_effective_settings_dict())
 		_recompute_snapshots()
 	return loaded
 
 func save_user_settings() -> Error:
 	_initialize()
 	return settings.save_to_config()
+
+func _effective_settings_dict() -> Dictionary:
+	var data := settings.to_dict()
+	if not settings.sfx_enabled:
+		# Keep the legacy `sfx_enabled` setting name, but make the visible
+		# "游戏声音" switch control every audio category, including music.
+		data["master"] = 0.0
+		data["music"] = 0.0
+		data["ambience"] = 0.0
+		data["sfx"] = 0.0
+	return data
 
 func set_listener_position(position: Vector2) -> void:
 	listener_position = position
@@ -231,13 +243,13 @@ func _ambience_layers_for_state(state: Dictionary) -> Dictionary:
 	var location := str(state.get("location", "outdoor"))
 	var weather := str(state.get("weather", "clear"))
 	if location == "interior" or location == "inside":
-		result["Environment"] = "fallback.ambience"
+		result["Environment"] = "ambience.environment"
 	else:
-		result["Environment"] = "fallback.ambience"
+		result["Environment"] = "ambience.environment"
 	if weather in ["rain", "storm", "heavy_rain", "暴雨", "小雨"]:
-		result["Weather"] = "fallback.ambience"
+		result["Weather"] = "ambience.weather"
 	if bool(state.get("fire_lit", false)):
-		result["Fire"] = "fallback.ambience"
+		result["Fire"] = "ambience.fire"
 	return result
 
 func _stream_for_id(id: String, category: String) -> AudioStream:
