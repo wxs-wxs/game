@@ -33,18 +33,18 @@ func add(key: String, delta: int) -> int:
 		var removed := mini(-delta, before)
 		if inventory != null:
 			var from_storage := mini(removed, int(inventory.storage.get(key, 0)))
-			inventory.storage[key] = int(inventory.storage.get(key, 0)) - from_storage
+			inventory.adjust_storage(key, -from_storage)
 			var remaining := removed - from_storage
 			if remaining > 0:
 				var from_backpack := mini(remaining, int(inventory.backpack.get(key, 0)))
-				inventory.backpack[key] = int(inventory.backpack.get(key, 0)) - from_backpack
+				inventory.adjust_backpack(key, -from_backpack)
 		amounts[key] = before - removed
 		return removed
 	amounts[key] = mini(int(capacities[key]), before + delta)
 	var actual := get_amount(key) - before
 	if actual > 0:
 		total_collected += actual
-		if inventory != null: inventory.storage[key] = int(inventory.storage.get(key, 0)) + actual
+		if inventory != null: inventory.adjust_storage(key, actual)
 	return actual
 func spend(cost: Dictionary) -> bool:
 	if not can_afford(cost): return false
@@ -80,7 +80,7 @@ func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dict
 			var id := str(key); var amount := int(rewards[key])
 			if amount <= 0: continue
 			amounts[id] += amount
-			if inventory != null: inventory.storage[id] = int(inventory.storage.get(id, 0)) + amount
+			if inventory != null: inventory.adjust_storage(id, amount)
 			total_collected += amount; stored[id] = amount
 		return {"ok":true, "reason":"奖励已存入营地。", "changed":not stored.is_empty(), "data":stored, "added":stored}
 	if not can_collect_rewards(rewards): return {"ok":false, "reason":"携带空间不足，请先整理背包。", "changed":false, "data":{}}
@@ -93,7 +93,7 @@ func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dict
 		var id := str(key)
 		if inventory != null:
 			amounts[id] = int(amounts.get(id, 0)) + amount
-			inventory.backpack[id] = int(inventory.backpack.get(id, 0)) + amount
+			inventory.adjust_backpack(id, amount)
 			total_collected += amount
 		else:
 			var actual := add(id, amount)

@@ -10,6 +10,10 @@ func _init(catalog_value = null) -> void:
 	if catalog_value == null: catalog_value = ResourceCatalog.new()
 	catalog = catalog_value
 	for key in catalog.ITEM_KEYS: backpack[key] = 0; storage[key] = 0
+func adjust_storage(key: String, delta: int) -> void:
+	storage[key] = int(storage.get(key, 0)) + delta
+func adjust_backpack(key: String, delta: int) -> void:
+	backpack[key] = int(backpack.get(key, 0)) + delta
 func backpack_slots_used() -> int:
 	var slots := 0
 	for key in catalog.ITEM_KEYS:

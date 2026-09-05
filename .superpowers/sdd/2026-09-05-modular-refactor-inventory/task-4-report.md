@@ -135,3 +135,27 @@ checker 修复后，Task 4 inventory gate 全部通过。报告历史部分保�
 ```
 
 退出码：`1`，输出 5 条真实违规，全部在 `scripts/domain/inventory/resource_ledger.gd` 的 `inventory.storage[...]` 和 `inventory.backpack[...]` 写入（行 36、40、47、83、96）。这是收窄规则后暴露的运行时跨模块内部字典写入；本轮按要求未修改运行时玩法，故该项是后续 concern，不将其描述为通过。
+
+## Reviewer fix round 2/5
+
+为消除上述真实跨模块耦合，在 `InventoryState` 增加 `adjust_storage` 与 `adjust_backpack` 语义操作方法，`ResourceLedger` 的 5 处外部字典写入改为调用这些方法。方法保持原有“当前值加 delta”的行为，公开 `backpack`/`storage` 字典、容量限制、扣减、奖励和同步契约不变。
+
+本轮执行结果：
+
+| 检查 | 退出码 | 关键输出 |
+|---|---:|---|
+| Godot editor parser | 0 | `[ DONE ] first_scan_filesystem`、`[ DONE ] loading_editor_layout` |
+| `inventory_domain_regression.gd` | 0 | `INVENTORY_DOMAIN_REGRESSION_OK` |
+| `resource_manager_facade_regression.gd` | 0 | `RESOURCE_MANAGER_FACADE_REGRESSION_OK` |
+| `resource_chain_smoke.gd` | 0 | `RESOURCE_CHAIN_SMOKE_OK stone=6 wood=4 axe=true pickaxe=true` |
+| `inventory_action_regression.gd` | 0 | `INVENTORY_ACTION_REGRESSION_OK carry=3/12 action=pickup` |
+| `storage_drag_regression.gd` | 0 | `STORAGE_DRAG_REGRESSION_OK slots=12/12 transfer=wood` |
+| `tests/architecture/check_architecture_regression.ps1` | 0 | `ARCHITECTURE_CHECK_REGRESSION_OK` |
+| `tools/check_architecture.ps1 -Root .` | 0 | `ARCHITECTURE_BOUNDARY_OK` |
+| `git diff --check` | 0 | 无 whitespace error（仅已有 LF/CRLF 转换提示） |
+
+三个 Godot smoke/regression 进程仍报告既有 ObjectDB/RID/resource 泄漏 warning，但测试标记和退出码均为通过。除 `scripts/domain/inventory/inventory_state.gd`、`scripts/domain/inventory/resource_ledger.gd`、checker fixture 外，本轮未修改文件；未触碰音频、`.import`、`.uid` 或 `default_bus_layout.tres`。
+
+## Fix round 2 conclusion
+
+注入的 `InventoryState` 不再通过 `ResourceLedger` 直接写入内部字典，项目级架构检查与正反向 fixture 均通过；库存回归和 parser 均保持通过。
