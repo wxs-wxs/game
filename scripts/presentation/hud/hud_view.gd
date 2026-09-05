@@ -160,6 +160,7 @@ func _build() -> void:
 	weather_label = factory.label(day_chip, Vector2(186, 6), Vector2(24, 18), "", 3, PixelTheme.TEXT_WATER)
 	var temperature_chip := factory.panel(root, Vector2(240, 12), Vector2(150, 30), PixelTheme.PANEL_DARK)
 	temperature_chip.name = "TemperatureChip"
+	temperature_chip.clip_contents = true
 	temperature_label = factory.label(temperature_chip, Vector2(6, 6), Vector2(138, 18), "", 3, PixelTheme.TEXT_WATER)
 	temperature_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var resource_chip := factory.panel(root, RESOURCE_CHIP_POSITION, RESOURCE_CHIP_SIZE, PixelTheme.PANEL_DARK)

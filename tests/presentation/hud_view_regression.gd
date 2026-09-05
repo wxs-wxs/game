@@ -20,6 +20,9 @@ func _init() -> void:
 		"resources": {}, "survivor": {}, "objective": {}, "log": [], "interaction": {}
 	})
 	assert(view.objective_panel.get_child_count() == objective_children)
+	var temperature_chip := host.get_node("TemperatureChip") as Panel
+	assert(temperature_chip != null)
+	assert(temperature_chip.clip_contents)
 	assert(view.required_snapshot_keys().size() == 9)
 	print("HUD_VIEW_REGRESSION_OK")
 	quit()
