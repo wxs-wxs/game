@@ -16,17 +16,7 @@ func _init() -> void:
 	var parent := Node2D.new()
 	var builder := WorldCollisionBuilder.new()
 	builder.build(parent, layout)
-	assert(parent.get_child_count() == 50)
-	var fence := parent.get_node_or_null("CampFenceCollision") as StaticBody2D
-	assert(fence != null)
-	assert(fence.collision_layer == 1 and fence.collision_mask == 1)
-	var fence_shape := fence.get_child(0) as CollisionShape2D
-	assert(fence_shape.shape is RectangleShape2D)
-	assert((fence_shape.shape as RectangleShape2D).size == Vector2(125, 12))
-	var river := parent.get_node_or_null("RiverWaterCollision") as StaticBody2D
-	assert(river != null)
-	var river_polygon := river.get_child(0) as CollisionPolygon2D
-	assert(river_polygon.polygon.size() == 74)
+	_assert_collision_geometry(parent, layout)
 	builder.clear(parent)
 	assert(parent.get_child_count() == 0)
 	parent.free()
@@ -34,18 +24,56 @@ func _init() -> void:
 	assert(world.world_layout != null)
 	assert(world.collision_builder != null)
 	world._build_collisions()
-	assert(world.get_child_count() == 50)
-	var world_fence := world.get_node_or_null("CampFenceCollision") as StaticBody2D
-	assert(world_fence != null and world_fence.collision_layer == 1 and world_fence.collision_mask == 1)
-	var found_rock := false
-	for child in world.get_children():
-		if child is StaticBody2D and child.is_in_group(WorldCollisionBuilder.COLLISION_GROUP):
-			var shape := child.get_child(0) as CollisionShape2D
-			if shape != null and shape.shape is RectangleShape2D and (shape.shape as RectangleShape2D).size == Vector2(26, 28):
-				found_rock = true
-	assert(found_rock)
-	assert(world.get_node_or_null("RiverWaterCollision") != null)
+	_assert_collision_geometry(world, world.world_layout)
 	assert(world.get_node_or_null("Player") == null)
+	assert(world.get_node_or_null("UIController") == null)
+	for child in world.get_children():
+		assert(child is StaticBody2D)
 	world.free()
 	print("WORLD_LAYOUT_REGRESSION_OK")
 	quit()
+
+func _assert_collision_geometry(parent: Node2D, layout: WorldLayout) -> void:
+	var expected_rects: Array[Rect2] = [
+		Rect2(75, 75, 125, 12), Rect2(235, 75, 30, 12), Rect2(75, 75, 12, 130),
+		Rect2(253, 75, 12, 130), Rect2(75, 199, 112, 12), Rect2(223, 199, 42, 12),
+		Rect2(132, 102, 19, 35), Rect2(165, 102, 19, 35),
+		Rect2(950, 380, 210, 18), Rect2(950, 380, 18, 185), Rect2(1142, 380, 18, 185),
+		Rect2(950, 547, 80, 18), Rect2(350, 145, 28, 28), Rect2(430, 230, 32, 24),
+		Rect2(280, 410, 30, 26), Rect2(435, 535, 30, 30), Rect2(810, 490, 32, 24),
+		Rect2(870, 590, 26, 28), Rect2(1328, 388, 30, 30), Rect2(1465, 550, 30, 30),
+		Rect2(1495, 732, 30, 30), Rect2(1465, 916, 30, 30)
+	]
+	var harvestable = layout.harvestable_tree_positions()
+	for position in harvestable:
+		expected_rects.append(Rect2(position - Vector2(11, 21), Vector2(22, 42)))
+	for position in layout.grove_tree_positions():
+		expected_rects.append(Rect2(position - Vector2(8, 14), Vector2(16, 28)))
+	assert(expected_rects.size() == 49)
+	assert(parent.get_child_count() == 50)
+	var rectangle_index := 0
+	for child in parent.get_children():
+		assert(child is StaticBody2D)
+		var body := child as StaticBody2D
+		assert(body.is_in_group(WorldCollisionBuilder.COLLISION_GROUP))
+		assert(body.collision_layer == 1 and body.collision_mask == 1)
+		if body.name == "RiverWaterCollision":
+			var polygon := body.get_child(0) as CollisionPolygon2D
+			assert(polygon != null and polygon.polygon.size() == 74)
+			assert(polygon.polygon[0] == Vector2(layout.river_bank_x(-32.0), -32.0))
+			assert(polygon.polygon[72] == Vector2(1944, 1112))
+			assert(polygon.polygon[73] == Vector2(1944, -32))
+			continue
+		assert(rectangle_index < expected_rects.size())
+		var shape := body.get_child(0) as CollisionShape2D
+		assert(shape != null and shape.shape is RectangleShape2D)
+		var expected := expected_rects[rectangle_index]
+		assert(body.position == expected.position + expected.size * 0.5)
+		assert((shape.shape as RectangleShape2D).size == expected.size)
+		var expected_names := {0: "CampFenceCollision", 6: "HouseWallCollision", 8: "RuinWallCollision", 12: "RockPileCollision", 22: "TreeCollision", 30: "SmallTreeCollision"}
+		if expected_names.has(rectangle_index):
+			assert(body.name == expected_names[rectangle_index])
+		else:
+			assert(body.name.begins_with("@StaticBody2D@"))
+		rectangle_index += 1
+	assert(rectangle_index == expected_rects.size())
