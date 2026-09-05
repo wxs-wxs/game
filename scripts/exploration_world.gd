@@ -425,7 +425,11 @@ func _set_camera_zoom(value: Vector2) -> void:
 			child.zoom = value
 
 func _refresh_audio_context() -> void:
-	if game == null or game.audio == null or not game.audio.has_method("set_world_state"):
+	if game == null or game.audio == null:
+		return
+	if player != null and game.audio.has_method("set_listener_position"):
+		game.audio.set_listener_position(player.global_position)
+	if not game.audio.has_method("set_world_state"):
 		return
 	var phase := "exploration"
 	match str(game.phase):

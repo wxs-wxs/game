@@ -6,14 +6,20 @@ var headless_mode: bool = false
 var _players: Dictionary = {}
 var _fades: Dictionary = {}
 var fade_seconds: float = 0.25
+var layer_volumes: Dictionary = {}
 
 func initialize(headless: bool) -> void:
 	headless_mode = headless
 
-func set_layers(layers: Dictionary, streams: Dictionary = {}) -> bool:
+func set_layers(layers: Dictionary, streams: Dictionary = {}, volumes: Dictionary = {}) -> bool:
 	var previous_layers := active_layers.duplicate()
 	var changed := layers != active_layers
 	active_layers = layers.duplicate()
+	for layer_name in layers:
+		layer_volumes[layer_name] = float(volumes.get(layer_name, 0.0))
+	for layer_name in layer_volumes.keys():
+		if not layers.has(layer_name):
+			layer_volumes.erase(layer_name)
 	if headless_mode or not is_inside_tree():
 		return changed
 	for layer_name in ["Environment", "Weather", "Fire"]:
@@ -36,13 +42,14 @@ func set_layers(layers: Dictionary, streams: Dictionary = {}) -> bool:
 			player.volume_db = -80.0
 		if player.stream != stream or not player.playing or reactivated:
 			player.stream = stream
+			_configure_loop(stream)
 			player.play()
-			_fade_in(player)
+			_fade_in(player, float(layer_volumes.get(layer_name, 0.0)))
 	return changed
 
-func _fade_in(player: AudioStreamPlayer) -> void:
+func _fade_in(player: AudioStreamPlayer, target_volume_db: float = 0.0) -> void:
 	if not is_inside_tree():
-		player.volume_db = 0.0
+		player.volume_db = target_volume_db
 		return
 	var layer_name := _layer_for_player(player)
 	if not layer_name.is_empty():
@@ -50,7 +57,11 @@ func _fade_in(player: AudioStreamPlayer) -> void:
 	var tween := create_tween()
 	if not layer_name.is_empty():
 		_fades[layer_name] = tween
-	tween.tween_property(player, "volume_db", 0.0, fade_seconds)
+	tween.tween_property(player, "volume_db", target_volume_db, fade_seconds)
+
+func _configure_loop(stream: AudioStream) -> void:
+	if stream is AudioStreamWAV:
+		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 
 func _fade_out(player: AudioStreamPlayer) -> void:
 	if not is_inside_tree():

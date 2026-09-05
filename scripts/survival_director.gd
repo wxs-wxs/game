@@ -468,6 +468,10 @@ func _apply_high_threat_incident(game, lines: Array[String]) -> void:
 		victim.apply_change("health", -damage)
 		victim.injured = true
 		lines.append("高威胁事件：%s 在夜袭中受伤（-%d 生命）。" % [victim.display_name, damage])
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("survival.raid", {"victim": victim.id, "damage": damage})
+			if victim == game.get_protagonist():
+				game.audio.emit_event("player.hurt", {"source": "raid", "amount": damage})
 	var lost := mini(2, int(game.resources.get_amount("metal")))
 	if lost > 0:
 		game.resources.add("metal", -lost)
@@ -488,6 +492,8 @@ func _evaluate_milestones(game, lines: Array[String]) -> void:
 		_grant_reward(game, reward)
 		lines.append("里程碑达成：%s。" % str(definition.get("label", milestone_id)))
 		if not reward.is_empty(): lines.append("里程碑奖励：%s。" % _reward_text(reward, game))
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("milestone.reached", {"milestone_id": milestone_id})
 
 func _milestone_met(definition: Dictionary, game) -> bool:
 	var target := int(definition.get("target", 1))

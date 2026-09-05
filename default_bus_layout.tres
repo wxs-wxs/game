@@ -1,4 +1,8 @@
-[gd_resource type="AudioBusLayout" load_steps=1 format=3]
+[gd_resource type="AudioBusLayout" load_steps=2 format=3]
+
+[sub_resource type="AudioEffectLowPassFilter" id="AudioEffectLowPassFilter_weather_indoor"]
+cutoff_hz = 1800.0
+resonance = 0.45
 
 [resource]
 bus/0/name = &"Master"
@@ -31,6 +35,8 @@ bus/4/mute = false
 bus/4/bypass_fx = false
 bus/4/volume_db = 0.0
 bus/4/send = &"Ambience"
+bus/4/effect/0/effect = SubResource("AudioEffectLowPassFilter_weather_indoor")
+bus/4/effect/0/enabled = true
 bus/5/name = &"Fire"
 bus/5/solo = false
 bus/5/mute = false

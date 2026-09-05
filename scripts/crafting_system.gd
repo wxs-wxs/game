@@ -33,20 +33,25 @@ func recipe_status(recipe_id: String) -> Dictionary:
 func craft(recipe_id: String) -> Dictionary:
 	var status := recipe_status(recipe_id)
 	if not bool(status.get("can_craft", false)):
+		_emit_audio("craft.failed", {"recipe_id": recipe_id})
 		return {"ok":false, "recipe_id":recipe_id, "reason":str(status.get("reason", "无法制作")), "locked":not bool(status.get("unlocked", false))}
 	var definition: Dictionary = definitions[recipe_id]
 	var cost: Dictionary = definition.get("cost", {})
-	if not game.resources.spend(cost): return {"ok":false, "reason":"材料不足，未扣除任何材料。"}
+	if not game.resources.spend(cost):
+		_emit_audio("craft.failed", {"recipe_id": recipe_id})
+		return {"ok":false, "reason":"材料不足，未扣除任何材料。"}
 	for item in definition.get("output", {}):
 		var granted: Dictionary = game.resources.grant_item(str(item), int(definition.output[item]))
 		if not bool(granted.get("ok", false)):
 			# The preflight check makes this unreachable; restore the cost if a
 			# custom ResourceManager changes between checks.
 			for key in cost: game.resources.add(str(key), int(cost[key]))
+			_emit_audio("craft.failed", {"recipe_id": recipe_id})
 			return {"ok":false, "reason":str(granted.get("reason", "产出空间不足。"))}
 	var result := {"ok":true, "recipe_id":recipe_id, "reason":"制作了%s。" % str(definition.get("name", recipe_id))}
 	if game != null and game.has_method("record_survival_action"): game.record_survival_action("craft:" + recipe_id)
 	if game != null and game.daily_log != null: game.daily_log.append(result.reason)
+	_emit_audio("craft.complete", {"recipe_id": recipe_id})
 	return result
 
 func use_item(item_id: String) -> Dictionary:
@@ -93,7 +98,15 @@ func use_item(item_id: String) -> Dictionary:
 			else:
 				_add_item_back(item_id); return {"ok":false, "reason":"该物品无法使用。"}
 	if game.daily_log != null: game.daily_log.append(message)
+	if item_id in ["food", "cooked_food"] or ResourceManager.FISH_KEYS.has(item_id) or ResourceManager.COOKED_FISH_KEYS.has(item_id):
+		_emit_audio("player.eat", {"item_id": item_id})
+	elif item_id == "medicine":
+		_emit_audio("player.use_medicine", {"item_id": item_id})
 	return {"ok":true, "reason":message, "item_id":item_id}
+
+func _emit_audio(event_id: String, params: Dictionary = {}) -> void:
+	if game != null and game.audio != null and game.audio.has_method("emit_event"):
+		game.audio.emit_event(event_id, params)
 
 func _consume_item(item_id: String) -> bool:
 	var resources: ResourceManager = game.resources

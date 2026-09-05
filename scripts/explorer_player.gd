@@ -34,6 +34,7 @@ var walk_frame := 0
 func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	game = manager
 	world = map
+	_sync_audio_listener()
 	# The interior is added after the player in the scene tree and paints its
 	# floor/background as a sibling.  Keep the player in a stable foreground
 	# layer so movement remains visible after entering the room.
@@ -94,8 +95,10 @@ func set_interior_state(value: bool) -> void:
 	z_index = 6 if interior else 4
 	velocity = Vector2.ZERO
 	_footstep_accumulator = 0.0
+	_sync_audio_listener()
 
 func _physics_process(_delta: float) -> void:
+	_sync_audio_listener()
 	if game == null or game.time.paused or game.phase == GameManager.PHASE_ENDED or (world != null and world.is_interacting()):
 		velocity = Vector2.ZERO
 		return
@@ -133,7 +136,12 @@ func _physics_process(_delta: float) -> void:
 		var bounds := _movement_bounds()
 		global_position.x = clampf(global_position.x, bounds.position.x, bounds.end.x)
 		global_position.y = clampf(global_position.y, bounds.position.y, bounds.end.y)
+	_sync_audio_listener()
 	queue_redraw()
+
+func _sync_audio_listener() -> void:
+	if game != null and game.audio != null and game.audio.has_method("set_listener_position"):
+		game.audio.set_listener_position(global_position)
 
 func _advance_walk_animation(delta: float) -> void:
 	walk_phase = fmod(walk_phase + maxf(0.0, delta) * WALK_CYCLE_SPEED, TAU)

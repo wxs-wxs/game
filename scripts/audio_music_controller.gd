@@ -5,6 +5,7 @@ var active_music_id: String = ""
 var last_requested_id: String = ""
 var crossfade_seconds: float = 1.0
 var headless_mode: bool = false
+var last_volume_db: float = 0.0
 var _players: Array[AudioStreamPlayer] = []
 var _active_index := 0
 
@@ -20,9 +21,11 @@ func initialize(headless: bool) -> void:
 
 func set_music(id: String, stream: AudioStream, volume_db: float = 0.0) -> bool:
 	last_requested_id = id
+	last_volume_db = volume_db
 	if id == active_music_id:
 		return false
 	active_music_id = id
+	_configure_loop(stream)
 	if headless_mode or stream == null or _players.is_empty() or not is_inside_tree():
 		return true
 	var next_index := 1 - _active_index
@@ -43,6 +46,10 @@ func set_music(id: String, stream: AudioStream, volume_db: float = 0.0) -> bool:
 		old_player.stop()
 	_active_index = next_index
 	return true
+
+func _configure_loop(stream: AudioStream) -> void:
+	if stream is AudioStreamWAV:
+		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 
 func stop() -> void:
 	active_music_id = ""

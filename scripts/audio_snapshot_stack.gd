@@ -10,7 +10,9 @@ const SNAPSHOT_TARGETS := {
 	"pause": {"Music": -8.0, "Environment": -18.0, "World": -24.0},
 	"modal": {"Music": -5.0, "Environment": -12.0, "World": -18.0},
 	"danger": {"Music": -2.0, "World": -6.0, "Critical": 0.0},
-	"interior": {"World": -3.0},
+	# Rain remains audible indoors, but the fixed Weather bus is attenuated and
+	# filtered so entering a room changes only the weather layer.
+	"interior": {"World": -3.0, "Weather": -18.0},
 	"game_over": {"Environment": -80.0, "World": -80.0},
 }
 

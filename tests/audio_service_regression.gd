@@ -30,6 +30,9 @@ func _init() -> void:
 	assert(service.emit_event("interaction.blocked") == "headless")
 	service.set_world_state({"phase": "exploration", "weather": "rain", "location": "interior", "fire_lit": false})
 	assert(service.world_state.location == "interior")
+	assert(service.last_snapshot_targets["Weather"] < base_volume_db(service, "Weather"), "indoor weather must be attenuated")
+	var weather_bus := AudioServer.get_bus_index("Weather")
+	assert(weather_bus >= 0 and AudioServer.get_bus_effect_count(weather_bus) > 0, "weather bus must have an indoor low-pass effect")
 	service.push_snapshot("pause")
 	assert(service.last_snapshot_targets["Music"] < base_volume_db(service, "Music"))
 	service.pop_snapshot("pause")
@@ -86,11 +89,13 @@ func _init() -> void:
 
 	service.set_listener_position(Vector2(12, 18))
 	assert(service.listener_position == Vector2(12, 18))
+	assert(service._sfx.listener_position == Vector2(12, 18), "service listener must reach production SFX controller")
 	assert(service._rng != null, "service owns a private RNG")
-	assert(service.save_user_settings() == OK, "settings should save through ConfigFile")
+	const settings_path := "user://audio_service_regression.cfg"
+	assert(service.settings.save_to_config(settings_path) == OK, "settings should save through ConfigFile")
 	var restored = AudioServiceResource.new()
 	restored.headless_mode = true
-	assert(restored.load_user_settings(), "settings should load through ConfigFile")
+	assert(restored.settings.load_from_config(settings_path), "settings should load through ConfigFile")
 	assert(is_equal_approx(restored.to_settings_dict().music, 0.25))
 
 	var routing: AudioSfxController = AudioSfxControllerResource.new()
@@ -135,21 +140,27 @@ func _init() -> void:
 	music.initialize(false)
 	get_root().add_child(music)
 	music.set_music("a", wav)
+	assert(wav is AudioStreamWAV and wav.loop_mode == AudioStreamWAV.LOOP_FORWARD, "music streams must loop in the controller")
+	music.set_music("base_volume", wav, -8.0)
+	assert(is_equal_approx(music.last_volume_db, -8.0), "music must retain cue base volume")
 	music.set_music("b", wav)
 	assert(music.active_music_id == "b" and music._players.size() == 2, "music uses double-buffer state")
 	var ambience: AudioAmbienceController = AudioAmbienceControllerResource.new()
 	ambience.initialize(false)
 	get_root().add_child(ambience)
-	ambience.set_layers({"Environment": "loop"}, {"Environment": wav})
+	ambience.set_layers({"Environment": "loop"}, {"Environment": wav}, {"Environment": -6.0})
 	assert(ambience.fade_seconds > 0.0)
 	assert(ambience.active_layers.has("Environment"))
+	assert(is_equal_approx(float(ambience.layer_volumes["Environment"]), -6.0), "ambience must retain cue base volume")
 	ambience.set_layers({}, {})
-	ambience.set_layers({"Environment": "loop"}, {"Environment": wav})
+	ambience.set_layers({"Environment": "loop"}, {"Environment": wav}, {"Environment": -6.0})
 	assert(ambience.active_layers.has("Environment"), "rapid ambience reactivation should remain active")
 	print("AUDIO_SERVICE_OK buses=%d events=%d music=%s layers=%d" % [BUS_PARENTS.size(), service.event_log.size(), service.active_music_id, service.active_ambience_layers.size()])
 	for node in [ambience, music, routing, restored, service]:
 		if is_instance_valid(node):
 			node.free()
+	if FileAccess.file_exists(settings_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(settings_path))
 	quit()
 
 func _cue(id: String, bus: String, spatial: String, priority: int, steal: String) -> AudioCue:

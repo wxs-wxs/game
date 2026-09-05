@@ -39,6 +39,8 @@ func _run() -> void:
 	assert(world.player.interior)
 	assert(audio.active_music_id == "interior")
 	assert(audio.active_ambience_layers.has("Weather"))
+	assert(audio.listener_position == world.player.global_position, "indoor movement must update the live listener")
+	assert(audio.last_snapshot_targets["Weather"] < _base_volume_db(audio, "Weather"))
 	assert(not audio.active_ambience_layers.has("Fire"))
 
 	var interior: HouseInterior = world.interior_manager.interior
@@ -92,6 +94,24 @@ func _run() -> void:
 	world.try_interact()
 	world._process(2.2)
 	assert(_has_event(audio, "interaction.complete"))
+	assert(_has_event(audio, "gather.hit"))
+	assert(_has_event(audio, "gather.collect"))
+	assert(game.resources.grant_item("food", 1).ok)
+	assert(game.use_item("food").ok)
+	assert(_has_event(audio, "player.eat"))
+	game.get_protagonist().health = 60
+	assert(game.resources.grant_item("medicine", 1).ok)
+	assert(game.use_item("medicine").ok)
+	assert(_has_event(audio, "player.use_medicine"))
+	assert(not game.craft_item("torch").ok)
+	assert(_has_event(audio, "craft.failed"))
+	game.resources.set_workbench_available(true)
+	game.buildings.built["workbench"] = 1
+	game.resources.grant_item("wood", 2)
+	game.resources.grant_item("fiber", 1)
+	var crafted_torch := game.craft_item("torch")
+	assert(crafted_torch.ok)
+	assert(_has_event(audio, "craft.complete"))
 
 	var fishing := _point(world, "river_fishing")
 	fishing.failure_chance = 0.0
@@ -159,6 +179,44 @@ func _run() -> void:
 	ui._on_report_continue()
 	assert(game.phase == GameManager.PHASE_MORNING)
 	assert(_has_event(audio, "day.dawn"))
+	game.assign_work(0, "搜寻食物")
+	game.start_day()
+	game.tick(TimeManager.WORK_INTERVAL)
+	assert(_has_event(audio, "task.complete"))
+	game.grant_construction_xp(100)
+	assert(_has_event(audio, "blueprint.unlocked"))
+
+	var event_game := GameManager.new()
+	event_game.audio = audio
+	event_game.start_exploration()
+	event_game.day_return_required = true
+	var event_night := event_game.finish_exploration_day()
+	assert(bool(event_night.get("ok", false)))
+	assert(_has_event(audio, "event.reveal"))
+	if event_game.phase == GameManager.PHASE_EVENT:
+		var choice_index := _first_affordable_choice(event_game)
+		assert(choice_index >= 0)
+		assert(bool(event_game.choose_event(choice_index).get("ok", false)))
+		assert(_has_event(audio, "event.choice"))
+
+	var survival_game := GameManager.new()
+	survival_game.audio = audio
+	survival_game.start_exploration()
+	survival_game.weather = "寒冷"
+	survival_game.get_protagonist().body_temperature = 34.0
+	survival_game._update_temperature(1.0)
+	assert(_has_event(audio, "survival.temperature_warning"))
+	survival_game.resources.amounts["food"] = 0
+	survival_game._night_settlement()
+	assert(_has_event(audio, "survival.food_warning"))
+	survival_game.phase = GameManager.PHASE_DAY
+	survival_game.time.reset_day()
+	survival_game.advance_exploration(TimeManager.DAY_SECONDS * 0.81)
+	assert(_has_event(audio, "day.dusk_warning"))
+	survival_game.survival.completed_days = 1
+	var milestone_lines: Array[String] = []
+	survival_game.survival._evaluate_milestones(survival_game, milestone_lines)
+	assert(_has_event(audio, "milestone.reached"))
 
 	var doom_audio := AudioServiceResource.new()
 	doom_audio.name = "AudioServiceDoom"
@@ -196,6 +254,12 @@ func _point(world: ExplorationWorld, id: String) -> InteractionPoint:
 			return point
 	assert(false, "missing interaction point: %s" % id)
 	return null
+
+func _first_affordable_choice(game: GameManager) -> int:
+	for index in range(game.events.current_event.get("data", {}).get("choices", []).size()):
+		if game.resources.can_afford(game.events.choice_cost(index)):
+			return index
+	return -1
 
 func _event_ids(audio: Node) -> Array[String]:
 	var ids: Array[String] = []

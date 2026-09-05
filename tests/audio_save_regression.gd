@@ -49,4 +49,6 @@ func _init() -> void:
 	for node in [restored, persisted]:
 		if is_instance_valid(node):
 			node.free()
+	if FileAccess.file_exists(SETTINGS_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
 	quit()

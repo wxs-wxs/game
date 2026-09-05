@@ -196,8 +196,10 @@ func _complete_interaction() -> Dictionary:
 		if game.audio.has_method("emit_event"):
 			game.audio.emit_event("interaction.complete")
 			var specific_event := _specific_event_id()
+			if unique_id.begins_with("forest_") or unique_id.begins_with("old_ruins"):
+				game.audio.emit_event("gather.hit", {"source": unique_id})
 			if not specific_event.is_empty() and not (specific_event == "fire.ignite" and fire_was_lit):
-				game.audio.emit_event(specific_event)
+				game.audio.emit_event(specific_event, {"source": unique_id})
 	return result
 
 func allow_reward_overflow() -> bool:

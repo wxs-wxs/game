@@ -121,13 +121,17 @@ func set_world_state(state: Dictionary) -> void:
 	world_state = normalized
 	var music_id := _music_id_for_state(world_state)
 	var music_stream := _stream_for_id(music_id, "music")
-	_music.set_music(music_id, music_stream)
+	var music_cue := _cue_for_id(music_id, "music")
+	_music.set_music(music_id, music_stream, music_cue.base_volume_db if music_cue != null else 0.0)
 	active_music_id = _music.active_music_id
 	var layers := _ambience_layers_for_state(world_state)
 	var streams: Dictionary = {}
+	var volumes: Dictionary = {}
 	for layer_name in layers:
-		streams[layer_name] = _stream_for_id(str(layers[layer_name]), "ambience")
-	_ambience.set_layers(layers, streams)
+		var layer_cue := _cue_for_id(str(layers[layer_name]), "ambience")
+		streams[layer_name] = _stream_for_cue(layer_cue)
+		volumes[layer_name] = layer_cue.base_volume_db if layer_cue != null else 0.0
+	_ambience.set_layers(layers, streams, volumes)
 	active_ambience_layers = _ambience.active_layers.duplicate(true)
 	if world_state.paused:
 		push_snapshot("pause")
@@ -232,12 +236,15 @@ func _ambience_layers_for_state(state: Dictionary) -> Dictionary:
 	return result
 
 func _stream_for_id(id: String, category: String) -> AudioStream:
+	return _stream_for_cue(_cue_for_id(id, category))
+
+func _cue_for_id(id: String, category: String) -> AudioCue:
 	var cue: AudioCue = catalog.get_cue(id) if catalog != null else null
 	if cue != null:
-		return _stream_for_cue(cue)
+		var resolved := catalog.fallback_for(cue)
+		return resolved if resolved != null else cue
 	var fallback_id := "fallback.%s" % category
-	cue = catalog.get_cue(fallback_id) if catalog != null else null
-	return _stream_for_cue(cue)
+	return catalog.get_cue(fallback_id) if catalog != null else null
 
 func _stream_for_cue(cue: AudioCue) -> AudioStream:
 	if cue == null:
