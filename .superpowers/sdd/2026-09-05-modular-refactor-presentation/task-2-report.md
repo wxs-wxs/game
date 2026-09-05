@@ -30,3 +30,14 @@ Godot's existing ObjectDB/resource shutdown leak warnings remain non-fatal;
 all tests exit with code 0. Label and ProgressBar minimum sizes are theme-driven,
 so the factory test asserts the authored position and minimum dimensions rather
 than overriding the established PixelTheme behavior.
+
+## Review Fix
+
+The factory regression now also locks the five button states (`normal`, `hover`,
+`pressed`, `disabled`, and `focus`) to `StyleBoxTexture` outputs matching the
+corresponding `PixelUITheme.button_style` texture, tint, and margins. It also
+checks the null-theme fallback's Fusion Pixel default font, body size, and
+disabled antialiasing, hinting, and subpixel positioning.
+
+Review verification passed with the same factory, HUD layout, HUD icon, HUD
+overlay, parser, architecture, and diff markers above.
