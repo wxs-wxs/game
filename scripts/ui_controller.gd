@@ -847,7 +847,8 @@ func _build_report_panel() -> void:
 func _open_pause_overlay(kind: String) -> void:
 	if _overlay_pause_kinds.has(kind):
 		return
-	if game != null and game.audio != null and game.audio.has_method("push_snapshot"):
+	var was_empty := _overlay_pause_depth == 0
+	if was_empty and game != null and game.audio != null and game.audio.has_method("push_snapshot"):
 		game.audio.push_snapshot("modal")
 	_overlay_pause_kinds[kind] = true
 	_overlay_pause_depth += 1
@@ -857,10 +858,11 @@ func _open_pause_overlay(kind: String) -> void:
 func _close_pause_overlay(kind: String) -> void:
 	if not _overlay_pause_kinds.has(kind):
 		return
+	var was_last := _overlay_pause_depth <= 1
 	_overlay_pause_kinds.erase(kind)
-	if game != null and game.audio != null and game.audio.has_method("pop_snapshot"):
-		game.audio.pop_snapshot("modal")
 	_overlay_pause_depth = maxi(0, _overlay_pause_depth - 1)
+	if was_last and game != null and game.audio != null and game.audio.has_method("pop_snapshot"):
+		game.audio.pop_snapshot("modal")
 	if game != null and game.time != null:
 		game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 

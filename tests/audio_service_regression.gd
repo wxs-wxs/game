@@ -49,6 +49,9 @@ func _init() -> void:
 	var critical_cue: AudioCue = service.catalog.get_cue("player.death")
 	critical_cue.cooldown_ms = 0
 	assert(service.emit_event("player.death") == "headless", "Critical must retain a reserved channel")
+	service.set_world_state({"phase": "exploration", "weather": "rain", "location": "outdoor", "fire_lit": true})
+	assert(is_equal_approx(float(service.last_snapshot_targets["Environment"]), base_volume_db(service, "Environment")))
+	assert(is_equal_approx(float(service.last_snapshot_targets["World"]), base_volume_db(service, "World")))
 	service.clear_snapshots()
 
 	service.set_world_state({"phase": "exploration", "weather": "rain", "location": "outdoor", "fire_lit": true})

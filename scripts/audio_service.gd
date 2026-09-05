@@ -203,6 +203,11 @@ func set_world_state(state: Dictionary) -> void:
 		push_snapshot("pause")
 	else:
 		pop_snapshot("pause")
+	var world_phase := str(world_state.get("phase", ""))
+	if world_phase in ["game_over", "over", "ended"]:
+		push_snapshot("game_over")
+	else:
+		pop_snapshot("game_over")
 	if world_state.location == "interior":
 		push_snapshot("interior")
 	else:
