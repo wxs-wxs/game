@@ -86,3 +86,24 @@ git diff --check
 ## Gate 结论
 
 Parser、库存 facade/domain 回归、资源链、库存动作、仓库存取和 `git diff --check` 均通过；架构检查因上述 13 条现存 domain 字段写入规则违规返回 `1`，因此 Task 4 gate 整体暂不能标记为通过。报告文档是本任务唯一新增文件，需提交。
+
+## 修复后复验（checker commit `b4e842c`）
+
+在架构 checker 修复提交 `b4e842c` 后重新执行全套 gate：
+
+| 检查 | 退出码 | 关键输出 |
+|---|---:|---|
+| Godot editor parser | 0 | `[ DONE ] first_scan_filesystem`、`[ DONE ] loading_editor_layout` |
+| `inventory_domain_regression.gd` | 0 | `INVENTORY_DOMAIN_REGRESSION_OK` |
+| `resource_manager_facade_regression.gd` | 0 | `RESOURCE_MANAGER_FACADE_REGRESSION_OK` |
+| `resource_chain_smoke.gd` | 0 | `RESOURCE_CHAIN_SMOKE_OK stone=6 wood=4 axe=true pickaxe=true` |
+| `inventory_action_regression.gd` | 0 | `INVENTORY_ACTION_REGRESSION_OK carry=3/12 action=pickup` |
+| `storage_drag_regression.gd` | 0 | `STORAGE_DRAG_REGRESSION_OK slots=12/12 transfer=wood` |
+| `tools/check_architecture.ps1 -Root .` | 0 | `ARCHITECTURE_BOUNDARY_OK` |
+| `git diff --check` | 0 | 无 whitespace error（仅已有 LF/CRLF 转换提示） |
+
+资源/ObjectDB 泄漏警告仍出现在三个 Godot smoke/regression 进程退出时，但不影响测试标记或退出码。本轮没有修改实现代码。
+
+## 修复后结论
+
+checker 修复后，Task 4 inventory gate 全部通过。报告历史部分保留第一轮 13 条误报失败记录，以上复验结果为当前结论。
