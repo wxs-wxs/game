@@ -167,6 +167,9 @@ func _resolve_night() -> Dictionary:
 		return {"ok": false, "phase": phase, "reason": "今天已经结算。"}
 	night_settlement_applied = true
 	var context := _night_context_input()
+	# Each settlement starts a fresh report; the previous report is retained for
+	# the UI but must not be fed back into the domain service.
+	context["report_lines"] = []
 	var result: Dictionary = _night_settlement_service.resolve(context)
 	report_lines = result.get("report_lines", [])
 	no_food_days = int(result.get("no_food_days", no_food_days))
