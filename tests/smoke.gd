@@ -82,7 +82,7 @@ func _init() -> void:
 	var before_wood := game.resources.get_amount("wood")
 	assert(build.confirm_build())
 	assert(game.resources.get_amount("wood") < before_wood)
-	for i in range(7): build.site._process(1.0)
+	for i in range(7): build.site.advance_build(1.0)
 	assert("storage_shelf" in game.built_facilities)
 	assert(game.construction_skill.experience > 0)
 	var upgrade_before := game.resources.get_amount("wood")

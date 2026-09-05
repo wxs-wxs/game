@@ -121,7 +121,12 @@ func _physics_process(_delta: float) -> void:
 		var interval := 0.34 if not interior else 0.42
 		if _footstep_accumulator >= interval:
 			_footstep_accumulator = 0.0
-			if game.audio != null: game.audio.play_sfx("footstep_indoor" if interior else "footstep_outdoor")
+			if game.audio != null and game.audio.has_method("emit_event"):
+				game.audio.emit_event("player.footstep", {
+					"indoor": interior,
+					"surface": "floor" if interior else "ground",
+					"position": global_position,
+				})
 	else:
 		_footstep_accumulator = 0.0
 	if world != null:

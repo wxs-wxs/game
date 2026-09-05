@@ -16,24 +16,22 @@ static func region(path: String, rectangle: Rect2) -> AtlasTexture:
 ## One cohesive 16px icon family for HUD rows and inventory slots.
 static func resource_icon(key: String) -> Texture2D:
 	match key:
-		"food", "fish_carp", "fish_bass", "fish_trout", "fish_eel", "water":
+		"fish_carp", "fish_bass", "fish_trout", "fish_eel", "cooked_fish_carp", "cooked_fish_bass", "cooked_fish_trout", "cooked_fish_eel", "water":
 			return texture("res://assets/art/ninja_adventure/Items/Food/Fish.png")
 		"wood":
 			return texture("res://assets/art/ninja_adventure/Items/Resource/Branch.png")
-		"medicine", "bandage", "fiber":
+		"food", "cooked_food", "medicine", "bandage", "fiber":
 			return texture("res://assets/art/ninja_adventure/Items/Resource/Grass.png")
-		"fuel", "torch":
+		"torch":
 			return region("res://assets/art/ninja_adventure/FX/Particle/Fire.png", Rect2(0, 0, 16, 12))
 		"stone":
 			return texture("res://assets/art/ninja_adventure/Items/Resource/Rock.png")
-		"scrap", "trap":
+		"trap":
 			return texture("res://assets/art/ninja_adventure/Items/Object/CrateEmpty.png")
 		"cloth":
 			return texture("res://assets/art/ninja_adventure/Items/Object/Bag.png")
 		"metal":
 			return texture("res://assets/art/ninja_adventure/Items/Treasure/LittleTreasureChest.png")
-		"cooked_food":
-			return texture("res://assets/art/ninja_adventure/Items/Food/Fish.png")
 	return texture("res://assets/art/ninja_adventure/Items/Treasure/BigTreasureChest.png")
 
 static func tool_icon(key: String) -> Texture2D:

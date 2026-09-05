@@ -97,6 +97,8 @@ func cancel_interaction() -> void:
 	if interacting:
 		interacting = false
 		interaction_progress = 0.0
+		if game != null and game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.cancel")
 		_stop_player_action()
 		interaction_progress_changed.emit(self, 0.0)
 
@@ -137,19 +139,23 @@ func interact() -> Dictionary:
 	if game == null: return {"ok":false, "reason":"交互系统未准备好。"}
 	if not has_required_tools():
 		var tool_reason := missing_tools_text()
-		if game.audio != null: game.audio.play_sfx("resource_shortage")
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.blocked")
 		return {"ok":false, "reason":tool_reason, "locked":true, "failed":true, "required_tools":required_tools.duplicate()}
 	if not can_interact(): return {"ok":false, "reason":"%s 还需要等待。" % display_name}
 	if not game.resources.can_afford(required_resources):
-		if game.audio != null: game.audio.play_sfx("resource_shortage")
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.blocked")
 		return {"ok":false, "reason":game.resources.missing_cost_text(required_resources)}
 	interacting = true
 	interaction_progress = 0.0
 	_start_player_action()
 	interaction_started.emit(self)
 	if game.audio != null:
-		game.audio.play_sfx("interaction_start")
-		if unique_id.begins_with("river_fishing"): game.audio.play_sfx("fishing_cast")
+		if game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.start")
+			if unique_id.begins_with("river_fishing"):
+				game.audio.emit_event("fishing.cast")
 	return {"ok":true, "message":"开始%s" % display_name, "started":true}
 
 func _complete_interaction() -> Dictionary:
@@ -159,9 +165,15 @@ func _complete_interaction() -> Dictionary:
 		return {"ok":false, "message":game.resources.missing_cost_text(required_resources), "failed":true}
 	if not reward.is_empty() and not game.resources.can_collect_rewards(reward):
 		return {"ok":false, "message":"携带空间不足，请先整理背包。", "failed":true}
+	var fire_was_lit := false
+	if unique_id == "campfire":
+		fire_was_lit = game.is_fire_active("campfire")
+	elif unique_id == "house_fireplace":
+		fire_was_lit = game.is_fire_active("house_fireplace")
 	var result := perform_interaction()
 	if not bool(result.get("ok", false)) or bool(result.get("failed", false)):
-		if game.audio != null: game.audio.play_sfx("interaction_failed")
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.failed")
 		return result
 	var interaction_rewards: Dictionary = reward.duplicate(true)
 	var result_rewards = result.get("rewards", {})
@@ -170,7 +182,8 @@ func _complete_interaction() -> Dictionary:
 	if not interaction_rewards.is_empty():
 		var collected: Dictionary = game.resources.collect_rewards_atomic(interaction_rewards, unique_id)
 		if not bool(collected.get("ok", false)):
-			if game.audio != null: game.audio.play_sfx("interaction_failed")
+			if game.audio != null and game.audio.has_method("emit_event"):
+				game.audio.emit_event("interaction.failed")
 			return {"ok":false, "message":str(collected.get("reason", "携带空间不足，请先整理背包。")), "failed":true}
 	game.resources.spend(required_resources)
 	cooldown_remaining = cooldown_time
@@ -180,8 +193,11 @@ func _complete_interaction() -> Dictionary:
 		hide()
 	game.daily_log.append("%s：%s" % [display_name, str(result.get("message", "完成"))])
 	if game.audio != null:
-		game.audio.play_sfx("interaction_complete")
-		game.audio.play_sfx(_specific_sfx(false))
+		if game.audio.has_method("emit_event"):
+			game.audio.emit_event("interaction.complete")
+			var specific_event := _specific_event_id()
+			if not specific_event.is_empty() and not (specific_event == "fire.ignite" and fire_was_lit):
+				game.audio.emit_event(specific_event)
 	return result
 
 func allow_reward_overflow() -> bool:
@@ -199,14 +215,20 @@ func _stop_player_action() -> void:
 	if player != null and player.has_method("stop_action"):
 		player.stop_action()
 
-func _specific_sfx(failed: bool) -> String:
-	if failed: return "fishing_fail" if unique_id.begins_with("river_fishing") else "interaction_failed"
-	if unique_id.begins_with("river_fishing"): return "fishing_success"
-	if unique_id.begins_with("forest_"): return "gather_plant"
-	if unique_id.begins_with("old_ruins"): return "ruin_search"
-	if unique_id == "campfire" or unique_id == "house_fireplace": return "fire_success"
-	if unique_id == "house_sleep": return "sleep"
-	return "item_pickup"
+func _specific_event_id() -> String:
+	if unique_id.begins_with("river_fishing"):
+		return "fishing.catch"
+	if unique_id.begins_with("forest_") or unique_id.begins_with("old_ruins"):
+		return "gather.collect"
+	if unique_id == "house_door":
+		return "door.open"
+	if unique_id == "house_exit":
+		return "door.close"
+	if unique_id == "campfire" or unique_id == "house_fireplace":
+		return "fire.ignite"
+	if unique_id == "house_sleep":
+		return "sleep.begin"
+	return ""
 
 func perform_interaction() -> Dictionary:
 	if failure_chance > 0.0 and game.rng.randf() < failure_chance:

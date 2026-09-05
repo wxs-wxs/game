@@ -96,9 +96,12 @@ func confirm_build() -> bool:
 	if world != null and world.game != null and world.game.day_return_required:
 		world.game.daily_log.append("建造失败：天色已晚，请先回到床边。")
 		world.interaction_result.emit("天色已晚，请先回到床边。")
+		if world.game.audio != null and world.game.audio.has_method("emit_event"):
+			world.game.audio.emit_event("build.invalid")
 		return false
 	if not can_place():
-		if world != null and world.game.audio != null: world.game.audio.play_sfx("resource_shortage")
+		if world != null and world.game.audio != null and world.game.audio.has_method("emit_event"):
+			world.game.audio.emit_event("build.invalid")
 		if world != null: world.interaction_result.emit("无法建造：材料、技能或位置不满足。")
 		return false
 	var definition: Dictionary = world.game.buildings.definitions[selected_blueprint]
@@ -106,11 +109,15 @@ func confirm_build() -> bool:
 	if not bool(started.get("ok", false)):
 		world.game.daily_log.append("建造失败：%s" % str(started.get("reason", "无法建造")))
 		world.interaction_result.emit(str(started.get("reason", "无法建造")))
+		if world.game.audio != null and world.game.audio.has_method("emit_event"):
+			world.game.audio.emit_event("build.invalid")
 		return false
 	var project: Dictionary = started.get("project", {})
 	site = preload("res://scripts/construction_site.gd").new(); world.add_child(site); site.position = ghost_position; site.setup(world.game, selected_blueprint, float(project.get("required", definition.get("build_time", 5.0))))
 	world.game.daily_log.append("建造开始：%s。" % str(definition.get("name", selected_blueprint)))
 	world.interaction_result.emit("开始建造 %s" % str(definition.get("name", selected_blueprint)))
+	if world.game.audio != null and world.game.audio.has_method("emit_event"):
+		world.game.audio.emit_event("build.place")
 	active = false; queue_redraw(); return true
 
 func _update_ghost_position() -> void:

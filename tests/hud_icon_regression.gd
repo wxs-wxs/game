@@ -7,7 +7,7 @@ func _init() -> void:
 	await process_frame
 	var ui: UIController = main.ui
 	assert(ui != null and ui.hud != null)
-	assert(ui._resource_icons.size() == 9)
+	assert(ui._resource_icons.size() == 7)
 	for icon in ui._resource_icons:
 		assert(icon is TextureRect)
 		assert(icon.texture != null)
@@ -17,15 +17,15 @@ func _init() -> void:
 	assert(ui.survivor_avatar_sprite.texture != null)
 	assert(ui.survivor_avatar_sprite.size == Vector2(24, 36))
 	assert(ui.survivor_avatar_sprite.scale == Vector2.ONE)
-	assert(ui._rail_icons.size() == 6)
-	for icon in ui._rail_icons:
-		assert(icon is TextureRect)
-		assert(icon.size == Vector2(16, 16))
-		assert(icon.scale == Vector2.ONE)
+	assert(ui._rail_icons.is_empty())
+	for index in range(7):
+		assert(ui.hud.get_node_or_null("ActionRailButton%d" % index) == null)
 	assert(ui.hud.get_node_or_null("ShortcutButton") != null)
 	assert(ui.hud.get_node_or_null("ShortcutPanel") != null)
-	assert(ui.backpack_button.focus_mode == Control.FOCUS_ALL)
-	assert(ui.backpack_button.get_theme_stylebox("focus") is StyleBoxTexture)
+	assert(ui.temperature_label != null)
+	assert(ui.backpack_button == null)
+	assert(ui.build_tool_buttons["axe"].get_node_or_null("Icon") != null)
+	assert(ui.build_tool_buttons["pickaxe"].get_node_or_null("Icon") != null)
 	assert(ui.hud.get_node_or_null("HelpButton") == null)
 	var help_key := InputEventKey.new()
 	help_key.keycode = KEY_H

@@ -45,6 +45,7 @@ func _init() -> void:
 	var processed := game.resources.convert_fish_to_food(fish_key)
 	assert(processed.get("ok", false))
 	assert(game.resources.backpack.get(fish_key, 0) == 0)
+	assert(game.resources.backpack.get(str(processed.get("cooked_key", "")), 0) == 1)
 	# Converting the only fish in a full starter inventory reuses its slot.
 	for key in ResourceManager.ITEM_KEYS: game.resources.backpack[key] = 0
 	game.resources.backpack["fish_carp"] = 1
@@ -57,6 +58,7 @@ func _init() -> void:
 	# Storage transfer accepts a new item type while an existing stack occupies
 	# another slot, which is the case shown by the storage-shelf UI.
 	game.resources.storage["food"] = 3
+	game.resources.backpack["fiber"] = 0
 	game.resources.backpack["wood"] = 2
 	var food_before := int(game.resources.backpack.get("food", 0))
 	var moved := game.resources.move_to_backpack("food", 1)
@@ -83,16 +85,16 @@ func _init() -> void:
 	game.resources.backpack["food"] = 1
 	game.resources.backpack["wood"] = 1
 	game.resources.backpack["stone"] = 1
-	var scrap_before := game.resources.get_amount("scrap")
+	var metal_before := game.resources.get_amount("metal")
 	assert(ruin.interact().get("started", false))
 	var blocked_result := ruin.tick_interaction(ruin.interaction_time + 0.1)
 	assert(blocked_result.get("failed", false))
-	assert(game.resources.get_amount("scrap") == scrap_before)
+	assert(game.resources.get_amount("metal") == metal_before)
 	game.resources.backpack_owned = true
 	game.resources.backpack_capacity = ResourceManager.BACKPACK_UPGRADED_CAPACITY
 	assert(ruin.interact().get("started", false))
 	ruin.tick_interaction(ruin.interaction_time + 0.1)
-	assert(game.resources.get_amount("scrap") > scrap_before)
+	assert(game.resources.get_amount("metal") > metal_before)
 	print("NEW_FEATURES_REGRESSION_OK zoom=%.2f fish=%s respawn=%s" % [camera.zoom.x, fish_key, pebble.position])
 	ruin.free()
 	tree.free()

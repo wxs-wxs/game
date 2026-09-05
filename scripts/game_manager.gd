@@ -110,7 +110,9 @@ func start_exploration() -> void:
 	exploration_mode = true
 	survival.begin_day(day, weather, self)
 	daily_log.append("第 %d 天：离开营地，开始探索。" % day)
-	if audio != null: audio.play_music("day")
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("day.dawn")
 
 func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
@@ -130,6 +132,9 @@ func begin_morning() -> void:
 	night_context = {}
 	time.reset_day()
 	survival.begin_day(day, weather, self)
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("day.dawn")
 
 func advance(delta: float) -> void:
 	if check_protagonist_health(): return
@@ -164,6 +169,9 @@ func _resolve_night() -> Dictionary:
 	var created := events.create_weighted_event(rng, survival.event_context(self))
 	if created.is_empty(): phase = PHASE_REPORT
 	else: phase = PHASE_EVENT
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("night.report")
 	return {"ok": true, "phase": phase, "reason": "夜间结算完成。"}
 
 func _finish_exploration_day() -> void:
@@ -318,7 +326,8 @@ func upgrade_house() -> Dictionary:
 	resources.spend(cost); house_level += 1; construction_skill.repaired_count += 1; construction_skill.add_experience(12)
 	survival.record_action("house_upgrade")
 	daily_log.append("小屋升级至等级 %d。" % house_level)
-	if audio != null: audio.play_sfx("build_complete")
+	if audio != null:
+		audio.emit_event("house.upgrade")
 	return {"ok":true, "reason":"小屋升级至等级 %d。" % house_level}
 
 func grant_construction_xp(amount: int) -> bool:
@@ -360,6 +369,7 @@ func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
 	var state: Dictionary = fire_states[source_id]
 	if not resources.can_afford({"wood": wood}):
 		return {"ok": false, "reason": resources.missing_cost_text({"wood": wood})}
+	var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
 	var per_wood := maxf(0.1, float(state.get("fuel_per_wood", 120.0)))
 	var available := maxf(0.0, float(state.get("fuel_capacity", 360.0)) - float(state.get("fuel_remaining", 0.0)))
 	var accepted_wood := mini(wood, int(ceil(available / per_wood)))
@@ -370,18 +380,32 @@ func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
 	state["fuel_remaining"] = float(state.get("fuel_remaining", 0.0)) + added
 	state["lit"] = true
 	fire_states[source_id] = state
+	_refresh_world_audio_context()
 	return {"ok": true, "reason": "火焰重新燃旺。", "state": state.duplicate(true)}
 
 func tick_fire(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	var changed := false
 	for source_id in fire_states.keys():
 		var state: Dictionary = fire_states[source_id]
+		var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
+		var before_remaining := float(state.get("fuel_remaining", 0.0))
 		var remaining := maxf(0.0, float(state.get("fuel_remaining", 0.0)) - delta)
 		state["fuel_remaining"] = remaining
 		if remaining <= 0.0:
 			state["lit"] = false
+			if was_lit and before_remaining > 0.0:
+				if audio != null:
+					audio.emit_event("fire.extinguish")
+				changed = true
+		elif before_remaining > 20.0 and remaining <= 20.0 and was_lit:
+			if audio != null:
+				audio.emit_event("fire.fuel_low")
+			changed = true
 		fire_states[source_id] = state
+	if changed:
+		_refresh_world_audio_context()
 
 func is_fire_active(source_id: String) -> bool:
 	var state: Dictionary = fire_states.get(source_id, {})
@@ -439,6 +463,10 @@ func check_protagonist_health() -> bool:
 	time.paused = false
 	end_reason = "%s生命值归零，探索结束。" % (hero.display_name if hero != null else "主角")
 	daily_log.append(end_reason)
+	if audio != null:
+		audio.emit_event("player.death")
+		_refresh_world_audio_context()
+		audio.emit_event("game.over")
 	return true
 
 func change_all(stat: String, amount: int) -> void:
@@ -679,6 +707,10 @@ func from_dict(data: Dictionary) -> void:
 		if service != null:
 			service.apply_settings(legacy_audio)
 	if exploration_world != null: exploration_world.restore_state(world_data)
+
+func _refresh_world_audio_context() -> void:
+	if exploration_world != null and exploration_world.has_method("_refresh_audio_context"):
+		exploration_world._refresh_audio_context()
 
 func _audio_service() -> Node:
 	var main_loop := Engine.get_main_loop()

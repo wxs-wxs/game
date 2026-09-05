@@ -116,7 +116,7 @@ func _init() -> void:
 	assert(restored.has_axe())
 	assert(restored.has_pickaxe())
 	var legacy := ResourceManager.new()
-	legacy.from_dict({"amounts":{"food":2, "wood":1, "medicine":0, "fuel":0, "scrap":0}})
+	legacy.from_dict({"amounts":{"food":2, "wood":1, "medicine":0}})
 	assert(not legacy.has_axe())
 	assert(legacy.get_amount("stone") == 4)
 

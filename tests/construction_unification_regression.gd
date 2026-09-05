@@ -35,7 +35,7 @@ func _init() -> void:
 	var shelf_wood := game.resources.get_amount("wood")
 	assert(build.confirm_build())
 	assert(game.resources.get_amount("wood") == shelf_wood - 4)
-	for _i in range(8): build.site._process(1.0)
+	for _i in range(8): build.site.advance_build(1.0)
 	assert(game.buildings.has("storage_shelf"))
 	assert(game.built_facilities.has("storage_shelf"))
 	var capacity: int = int(game.resources.capacities["food"])

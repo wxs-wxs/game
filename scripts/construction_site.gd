@@ -13,6 +13,7 @@ signal construction_completed(site: ConstructionSite)
 
 func setup(manager: GameManager, id: String, duration: float) -> void:
 	game = manager; blueprint_id = id; build_time = maxf(0.1, duration)
+	set_process(true)
 	if blueprint_id == "storage_shelf":
 		var art := Sprite2D.new()
 		art.name = "NinjaAdventureConstructionArt"
@@ -30,6 +31,9 @@ func setup(manager: GameManager, id: String, duration: float) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	advance_build(delta)
+
+func advance_build(delta: float) -> void:
 	if completed or game == null or game.time.paused: return
 	if game.buildings != null and not game.buildings.active_project.is_empty() and str(game.buildings.active_project.get("id", "")) == blueprint_id:
 		game.buildings.advance_active_project(delta)
@@ -49,7 +53,8 @@ func _complete_once() -> void:
 	game.complete_world_construction(blueprint_id)
 	if blueprint_id == "storage_shelf": _register_outdoor_shelf()
 	if blueprint_id == "workbench": _register_outdoor_workbench()
-	if game.audio != null: game.audio.play_sfx("build_complete")
+	if game.audio != null and game.audio.has_method("emit_event"):
+		game.audio.emit_event("build.complete")
 	visible = false
 	construction_completed.emit(self)
 	queue_free()
