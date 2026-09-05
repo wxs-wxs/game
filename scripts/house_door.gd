@@ -39,7 +39,6 @@ func perform_interaction() -> Dictionary:
 		world.enter_house()
 	if was_inside == bool(world.is_inside):
 		return {"ok":false, "message":"房门暂时无法使用。", "failed":true}
-	if world.game.audio != null: world.game.audio.play_sfx("door_open" if not interior else "door_close")
 	return {"ok":true, "message":"已%s。" % ("离开小屋" if interior else "进入小屋")}
 
 func _draw() -> void:

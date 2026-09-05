@@ -927,19 +927,24 @@ func _build_report_panel() -> void:
 func _open_pause_overlay(kind: String) -> void:
 	if _overlay_pause_kinds.has(kind):
 		return
-	if _overlay_pause_depth == 0 and game != null and game.time != null:
-		_overlay_pause_was_paused = bool(game.time.paused)
-		game.time.paused = true
+	var was_empty := _overlay_pause_depth == 0
+	if was_empty and game != null and game.audio != null and game.audio.has_method("push_snapshot"):
+		game.audio.push_snapshot("modal")
 	_overlay_pause_kinds[kind] = true
 	_overlay_pause_depth += 1
+	if game != null and game.time != null:
+		game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 
 func _close_pause_overlay(kind: String) -> void:
 	if not _overlay_pause_kinds.has(kind):
 		return
+	var was_last := _overlay_pause_depth <= 1
 	_overlay_pause_kinds.erase(kind)
 	_overlay_pause_depth = maxi(0, _overlay_pause_depth - 1)
-	if _overlay_pause_depth == 0 and game != null and game.time != null:
-		game.time.paused = _overlay_pause_was_paused
+	if was_last and game != null and game.audio != null and game.audio.has_method("pop_snapshot"):
+		game.audio.pop_snapshot("modal")
+	if game != null and game.time != null:
+		game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 
 func has_pause_overlay() -> bool:
 	return _overlay_pause_depth > 0
@@ -1541,9 +1546,12 @@ func toggle_pause_menu() -> void:
 	if _build_selection_open:
 		_close_build_selection()
 	paused_by_menu = not paused_by_menu
-	game.time.paused = paused_by_menu
-	if game.audio != null and game.audio.has_method("set_pause_ducked"):
-		game.audio.set_pause_ducked(paused_by_menu)
+	if game.audio != null and game.audio.has_method("push_snapshot") and game.audio.has_method("pop_snapshot"):
+		if paused_by_menu:
+			game.audio.push_snapshot("pause")
+		else:
+			game.audio.pop_snapshot("pause")
+	game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 	refresh()
 
 func _on_resume() -> void:
@@ -1551,9 +1559,9 @@ func _on_resume() -> void:
 		paused_by_menu = false
 		return
 	paused_by_menu = false
-	game.time.paused = false
-	if game.audio != null and game.audio.has_method("set_pause_ducked"):
-		game.audio.set_pause_ducked(false)
+	if game.audio != null and game.audio.has_method("pop_snapshot"):
+		game.audio.pop_snapshot("pause")
+	game.time.paused = _overlay_pause_depth > 0
 	refresh()
 
 func exit_game() -> void:
@@ -1568,8 +1576,8 @@ func save_game() -> void:
 		_show_message("保存不可用", 3.0)
 		return
 	var ok: bool = bool(game.save_state())
-	if ok and game.audio != null and game.audio.has_method("play_sfx"):
-		game.audio.play_sfx("save_success")
+	if ok and game.audio != null and game.audio.has_method("emit_event"):
+		game.audio.emit_event("ui.save_complete")
 	_show_message("游戏已保存" if ok else "保存失败", 3.0)
 	refresh()
 
@@ -1578,14 +1586,16 @@ func load_game() -> void:
 		_show_message("读取不可用", 3.0)
 		return
 	var ok: bool = bool(game.load_state())
-	if ok and game.audio != null and game.audio.has_method("play_sfx"):
-		game.audio.play_sfx("load_success")
+	if ok and game.audio != null and game.audio.has_method("emit_event"):
+		game.audio.emit_event("ui.load_complete")
 	_show_message("存档已读取" if ok else "没有找到存档", 3.0)
 	paused_by_menu = false
 	if game.time != null:
 		game.time.paused = false
-	if game.audio != null and game.audio.has_method("set_pause_ducked"):
-		game.audio.set_pause_ducked(false)
+	if game.audio != null and game.audio.has_method("pop_snapshot"):
+		game.audio.pop_snapshot("pause")
+	if game.time != null:
+		game.time.paused = _overlay_pause_depth > 0
 	refresh()
 
 func upgrade_house() -> void:

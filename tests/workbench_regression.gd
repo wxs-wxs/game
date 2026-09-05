@@ -20,7 +20,7 @@ func _run() -> void:
 	var site: ConstructionSite = build.site
 	assert(site.get_node_or_null("WorkbenchArt") != null)
 	for _step in range(8):
-		site._process(1.0)
+		site.advance_build(1.0)
 	await process_frame
 	assert(game.buildings.has("workbench"))
 	assert(game.resources.workbench_available)

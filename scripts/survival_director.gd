@@ -424,6 +424,8 @@ func _evaluate_milestones(game, lines: Array[String]) -> void:
 		_grant_reward(game, reward)
 		lines.append("里程碑达成：%s。" % str(definition.get("label", milestone_id)))
 		if not reward.is_empty(): lines.append("里程碑奖励：%s。" % _reward_text(reward, game))
+		if game.audio != null and game.audio.has_method("emit_event"):
+			game.audio.emit_event("milestone.reached", {"milestone_id": milestone_id})
 
 func _milestone_met(definition: Dictionary, game) -> bool:
 	var target := int(definition.get("target", 1))

@@ -1,13 +1,18 @@
 extends SceneTree
 
 func _init() -> void:
+	var audio = root.get_node_or_null("AudioService")
+	if audio == null:
+		audio = preload("res://scripts/audio_service.gd").new()
+		audio.name = "AudioService"
+		root.add_child(audio)
+	audio.headless_mode = true
+	audio._sync_controller_modes()
+	assert(audio.emit_event("ui.confirm") == "headless")
+	assert(audio.event_log.back().event_id == "ui.confirm")
+	for bus_name in ["Master", "Music", "Ambience", "Environment", "Weather", "Fire", "SFX", "World", "UI", "Critical", "Voice"]:
+		assert(AudioServer.get_bus_index(bus_name) >= 0, "missing audio bus: %s" % bus_name)
 	var game := GameManager.new()
-	var audio = preload("res://scripts/audio_manager.gd").new()
-	root.add_child(audio)
-	audio._initialize()
-	audio.play_music("day"); audio.play_sfx("button_click"); audio.play_ambience("outdoor")
-	assert(audio != null)
-	assert(AudioServer.get_bus_index("Music") >= 0 and AudioServer.get_bus_index("SFX") >= 0 and AudioServer.get_bus_index("Ambience") >= 0)
 	game.audio = audio
 	assert(game.survivors.size() == 1)
 	assert(game.get_protagonist().display_name == "阿禾")
@@ -77,7 +82,7 @@ func _init() -> void:
 	var before_wood := game.resources.get_amount("wood")
 	assert(build.confirm_build())
 	assert(game.resources.get_amount("wood") < before_wood)
-	for i in range(7): build.site._process(1.0)
+	for i in range(7): build.site.advance_build(1.0)
 	assert("storage_shelf" in game.built_facilities)
 	assert(game.construction_skill.experience > 0)
 	var upgrade_before := game.resources.get_amount("wood")
@@ -114,7 +119,7 @@ func _init() -> void:
 		assert(long_run.day == expected_day + 1 and long_run.phase == GameManager.PHASE_MORNING)
 		long_run.start_exploration()
 	var zero_health := GameManager.new(); zero_health.start_exploration(); zero_health.get_protagonist().health = 0; zero_health.advance_exploration(0.1); assert(zero_health.phase == GameManager.PHASE_ENDED and not zero_health.won and zero_health.end_reason.contains("生命值归零"))
-	print("SMOKE_OK audio=%s indoor=%s build_xp=%d" % [audio.current_music, world.is_inside, game.construction_skill.experience])
+	print("SMOKE_OK audio_events=%d indoor=%s build_xp=%d" % [audio.event_log.size(), world.is_inside, game.construction_skill.experience])
 	quit()
 
 func _first_affordable_choice(game: GameManager) -> int:

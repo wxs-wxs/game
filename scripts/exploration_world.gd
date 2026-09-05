@@ -129,9 +129,8 @@ func setup(manager: GameManager) -> void:
 	interior_manager = preload("res://scripts/interior_manager.gd").new(); interior_manager.name = "InteriorManager"; add_child(interior_manager)
 	build_mode = preload("res://scripts/build_mode_controller.gd").new(); build_mode.name = "BuildMode"; add_child(build_mode); build_mode.setup(self)
 	_restore_construction_sites()
-	if game.audio != null:
-		game.audio.play_music("day"); _refresh_audio_context()
 	last_weather = game.weather
+	_refresh_audio_context()
 	visual_clock = 0.0
 	queue_redraw()
 
@@ -301,8 +300,7 @@ func enter_house() -> void:
 	_set_camera_limits(int(INTERIOR_OFFSET.x), int(INTERIOR_OFFSET.y), int(INTERIOR_OFFSET.x + INTERIOR_ROOM_SIZE.x), int(INTERIOR_OFFSET.y + INTERIOR_ROOM_SIZE.y))
 	_set_camera_zoom(INTERIOR_CAMERA_ZOOM)
 	game.in_house = true; game.outdoor_position = outdoor_position
-	if game.audio != null:
-		game.audio.play_music("interior"); game.audio.play_ambience("indoor_rain" if game.weather == "暴雨" else "indoor")
+	_refresh_audio_context()
 	interaction_changed.emit("")
 
 func exit_house() -> void:
@@ -318,8 +316,7 @@ func exit_house() -> void:
 	_set_camera_limits(0, 0, int(map_size.x), int(map_size.y))
 	_set_camera_zoom(OUTDOOR_CAMERA_ZOOM)
 	game.in_house = false
-	if game.audio != null:
-		game.audio.play_music("day"); _refresh_audio_context()
+	_refresh_audio_context()
 	interaction_changed.emit("")
 
 func _safe_outdoor_position(value: Vector2) -> Vector2:
@@ -419,6 +416,7 @@ func restore_state(data: Dictionary) -> void:
 		if point.interacting: active_interaction = point
 	if bool(data.get("in_house", false)) and not is_inside: enter_house()
 	elif not bool(data.get("in_house", false)) and is_inside: exit_house()
+	_refresh_audio_context()
 
 func _has_outdoor_workbench() -> bool:
 	for point in interactions:
@@ -439,14 +437,39 @@ func _set_camera_zoom(value: Vector2) -> void:
 			child.zoom = value
 
 func _refresh_audio_context() -> void:
+	if game == null or game.audio == null:
+		return
+	if player != null and game.audio.has_method("set_listener_position"):
+		game.audio.set_listener_position(player.global_position)
+	if not game.audio.has_method("set_world_state"):
+		return
+	var phase := "exploration"
+	match str(game.phase):
+		GameManager.PHASE_EVENT, GameManager.PHASE_REPORT:
+			phase = "night_report"
+		GameManager.PHASE_ENDED:
+			phase = "game_over"
+	var near_fire := false
 	if is_inside:
-		game.audio.play_ambience("indoor_rain" if game.weather == "暴雨" else "indoor")
-	else:
-		var near_fire := false
+		near_fire = game.is_fire_active("house_fireplace")
+	elif player != null:
 		for point in interactions:
-			if is_instance_valid(point) and point.unique_id == "campfire" and game.is_fire_active("campfire") and player.global_position.distance_to(point.global_position) < 90.0: near_fire = true
-		var context := "rain_campfire" if game.weather == "暴雨" and near_fire else ("campfire" if near_fire else ("rain" if game.weather == "暴雨" else "outdoor"))
-		game.audio.play_ambience(context)
+			if is_instance_valid(point) and point.unique_id == "campfire" and game.is_fire_active("campfire") and player.global_position.distance_to(point.global_position) < 90.0:
+				near_fire = true
+				break
+	var location := "interior" if is_inside else "outdoor"
+	var weather := str(game.weather)
+	if phase == "game_over":
+		location = "outdoor"
+		weather = "clear"
+		near_fire = false
+	game.audio.set_world_state({
+		"phase": phase,
+		"location": location,
+		"weather": weather,
+		"threat": "low",
+		"fire_lit": near_fire
+	})
 
 func is_near_active_campfire(radius: float = 110.0) -> bool:
 	if is_inside or game == null or player == null or not game.is_fire_active("campfire"):
@@ -464,6 +487,7 @@ func _on_point_completed(point: InteractionPoint, result: Dictionary) -> void:
 		storage_open_requested.emit()
 	if bool(result.get("open_tool_selection", false)):
 		tool_selection_requested.emit()
+	_refresh_audio_context()
 
 func _build_collisions() -> void:
 	# There is intentionally no invisible perimeter body. The expanded field is

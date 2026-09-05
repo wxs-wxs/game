@@ -14,7 +14,7 @@ func _init() -> void:
 	var requested_position: Vector2 = build.ghost_position
 	assert(build.confirm_build())
 	for _step in range(6):
-		build.site._process(1.0)
+		build.site.advance_build(1.0)
 	assert("storage_shelf" in game.built_facilities)
 	assert(game.resources.capacities["food"] == 35)
 	var outdoor_shelf = null

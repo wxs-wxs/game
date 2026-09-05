@@ -109,14 +109,18 @@ func start_exploration() -> void:
 	exploration_mode = true
 	survival.begin_day(day, weather, self)
 	daily_log.append("第 %d 天：离开营地，开始探索。" % day)
-	if audio != null: audio.play_music("day")
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("day.dawn")
 
 func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
 	if not exploration_mode or phase != PHASE_DAY or time.paused or day_return_required: return
 	var before_elapsed := time.elapsed
+	var before_progress := time.progress()
 	time.advance(delta)
 	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	_emit_dusk_warning_if_crossed(before_progress)
 	survival.observe_resources(self)
 	if check_protagonist_health(): return
 	if time.is_finished():
@@ -129,6 +133,9 @@ func begin_morning() -> void:
 	night_context = {}
 	time.reset_day()
 	survival.begin_day(day, weather, self)
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("day.dawn")
 
 func advance(delta: float) -> void:
 	if check_protagonist_health(): return
@@ -161,7 +168,12 @@ func _resolve_night() -> Dictionary:
 		return {"ok": true, "phase": phase, "reason": "主角生命值归零，游戏结束。"}
 	var created := events.create_weighted_event(rng, survival.event_context(self))
 	if created.is_empty(): phase = PHASE_REPORT
-	else: phase = PHASE_EVENT
+	else:
+		phase = PHASE_EVENT
+		_emit_audio("event.reveal", {"event_id": str(created.get("id", ""))})
+	_refresh_world_audio_context()
+	if audio != null:
+		audio.emit_event("night.report")
 	return {"ok": true, "phase": phase, "reason": "夜间结算完成。"}
 
 func _finish_exploration_day() -> void:
@@ -175,14 +187,17 @@ func start_day() -> Dictionary:
 	survival.begin_day(day, weather, self)
 	tasks.begin_day(survivors)
 	daily_log.append("工作开始：%s" % assignments_text())
+	_emit_audio("day.dawn")
 	return {"ok":true,"reason":"白天开始"}
 
 func tick(delta: float) -> bool:
 	if check_protagonist_health(): return false
 	if phase != PHASE_DAY: return false
 	var before_elapsed := time.elapsed
+	var before_progress := time.progress()
 	var task_ticks := time.advance(delta)
 	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	_emit_dusk_warning_if_crossed(before_progress)
 	for index in task_ticks:
 		_resolve_work_tick()
 		if check_protagonist_health(): return true
@@ -198,16 +213,20 @@ func finish_day() -> void:
 func force_finish_day() -> void:
 	if phase != PHASE_DAY: return
 	var before_elapsed := time.elapsed
+	var before_progress := time.progress()
 	var remaining_ticks: int = time.remaining_work_ticks()
 	for index in range(maxi(0, remaining_ticks)): _resolve_work_tick()
 	time.elapsed = TimeManager.DAY_SECONDS
 	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	_emit_dusk_warning_if_crossed(before_progress)
 	finish_day()
 
 func _resolve_work_tick() -> void:
 	var lines := tasks.resolve_tick(survivors, resources, buildings, weather, rng)
 	survival.observe_resources(self)
 	for line in lines: daily_log.append(line)
+	if not lines.is_empty():
+		_emit_audio("task.complete", {"lines": lines})
 	var completed_id := buildings.last_completed_id
 	if completed_id != "":
 		apply_building_effect(completed_id)
@@ -224,10 +243,15 @@ func choose_event(index: int) -> Dictionary:
 	if not events.current_event.is_empty():
 		var choices: Array = events.current_event.get("data", {}).get("choices", [])
 		if index >= 0 and index < choices.size(): choice_id = str(choices[index].get("id", ""))
+	var health_before: int = get_protagonist().health if get_protagonist() != null else 0
 	var result := events.resolve_choice(index, self)
 	if result.is_empty():
 		return {"ok":false,"reason":"事件选择无效，事件仍待处理。"}
 	survival.record_event(event_id, choice_id)
+	_emit_audio("event.choice", {"event_id": event_id, "choice_id": choice_id})
+	var hero_after := get_protagonist()
+	if hero_after != null and hero_after.health < health_before:
+		_emit_audio("player.hurt", {"source": "event", "amount": health_before - hero_after.health})
 	for line in result: report_lines.append(line)
 	if check_protagonist_health(): return {"ok":true, "reason":"主角生命值归零，游戏结束。"}
 	phase = PHASE_REPORT
@@ -323,7 +347,8 @@ func upgrade_house() -> Dictionary:
 	resources.spend(cost); house_level += 1; construction_skill.repaired_count += 1; construction_skill.add_experience(12)
 	survival.record_action("house_upgrade")
 	daily_log.append("小屋升级至等级 %d。" % house_level)
-	if audio != null: audio.play_sfx("build_complete")
+	if audio != null:
+		audio.emit_event("house.upgrade")
 	return {"ok":true, "reason":"小屋升级至等级 %d。" % house_level}
 
 func grant_construction_xp(amount: int) -> bool:
@@ -332,7 +357,10 @@ func grant_construction_xp(amount: int) -> bool:
 		for blueprint_id in buildings.definitions:
 			var definition: Dictionary = buildings.definitions[blueprint_id]
 			if str(definition.get("context", "camp")) == "exploration" and int(definition.get("required_skill_level", 1)) <= construction_skill.level:
-				blueprints.unlock(str(blueprint_id))
+				var id := str(blueprint_id)
+				var was_unlocked := blueprints.is_unlocked(id)
+				if blueprints.unlock(id) and not was_unlocked:
+					_emit_audio("blueprint.unlocked", {"blueprint_id": id})
 	return leveled
 
 func toggle_pause() -> void:
@@ -365,6 +393,7 @@ func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
 	var state: Dictionary = fire_states[source_id]
 	if not resources.can_afford({"wood": wood}):
 		return {"ok": false, "reason": resources.missing_cost_text({"wood": wood})}
+	var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
 	var per_wood := maxf(0.1, float(state.get("fuel_per_wood", 120.0)))
 	var available := maxf(0.0, float(state.get("fuel_capacity", 360.0)) - float(state.get("fuel_remaining", 0.0)))
 	var accepted_wood := mini(wood, int(ceil(available / per_wood)))
@@ -375,18 +404,32 @@ func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
 	state["fuel_remaining"] = float(state.get("fuel_remaining", 0.0)) + added
 	state["lit"] = true
 	fire_states[source_id] = state
+	_refresh_world_audio_context()
 	return {"ok": true, "reason": "火焰重新燃旺。", "state": state.duplicate(true)}
 
 func tick_fire(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	var changed := false
 	for source_id in fire_states.keys():
 		var state: Dictionary = fire_states[source_id]
+		var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
+		var before_remaining := float(state.get("fuel_remaining", 0.0))
 		var remaining := maxf(0.0, float(state.get("fuel_remaining", 0.0)) - delta)
 		state["fuel_remaining"] = remaining
 		if remaining <= 0.0:
 			state["lit"] = false
+			if was_lit and before_remaining > 0.0:
+				if audio != null:
+					audio.emit_event("fire.extinguish")
+				changed = true
+		elif before_remaining > 20.0 and remaining <= 20.0 and was_lit:
+			if audio != null:
+				audio.emit_event("fire.fuel_low")
+			changed = true
 		fire_states[source_id] = state
+	if changed:
+		_refresh_world_audio_context()
 
 func is_fire_active(source_id: String) -> bool:
 	var state: Dictionary = fire_states.get(source_id, {})
@@ -424,10 +467,13 @@ func _update_temperature(simulation_seconds: float) -> void:
 	var response := 0.006 if target < NORMAL_BODY_TEMPERATURE_C else 0.009
 	hero.body_temperature = clampf(hero.body_temperature + (target - hero.body_temperature) * response * simulation_seconds, -50.0, NORMAL_BODY_TEMPERATURE_C)
 	if hero.body_temperature < BODY_TEMPERATURE_DAMAGE_THRESHOLD_C:
+		_emit_audio("survival.temperature_warning", {"body_temperature": hero.body_temperature})
+		_emit_audio("player.cold_warning", {"body_temperature": hero.body_temperature})
 		hero.temperature_damage_accumulator += simulation_seconds
 		while hero.temperature_damage_accumulator >= BODY_TEMPERATURE_DAMAGE_INTERVAL:
 			hero.temperature_damage_accumulator -= BODY_TEMPERATURE_DAMAGE_INTERVAL
 			hero.apply_change("health", -1)
+			_emit_audio("player.hurt", {"source": "cold", "amount": 1, "body_temperature": hero.body_temperature})
 			if check_protagonist_health(): return
 	else:
 		hero.temperature_damage_accumulator = maxf(0.0, hero.temperature_damage_accumulator - simulation_seconds * 0.5)
@@ -444,6 +490,10 @@ func check_protagonist_health() -> bool:
 	time.paused = false
 	end_reason = "%s生命值归零，探索结束。" % (hero.display_name if hero != null else "主角")
 	daily_log.append(end_reason)
+	if audio != null:
+		audio.emit_event("player.death")
+		_refresh_world_audio_context()
+		audio.emit_event("game.over")
 	return true
 
 func change_all(stat: String, amount: int) -> void:
@@ -499,6 +549,14 @@ func get_weather_effect() -> Dictionary:
 func record_survival_action(action_id: String, amount: int = 1) -> void:
 	survival.record_action(action_id, amount)
 
+func _emit_audio(event_id: String, params: Dictionary = {}) -> void:
+	if audio != null and audio.has_method("emit_event"):
+		audio.emit_event(event_id, params)
+
+func _emit_dusk_warning_if_crossed(previous_progress: float) -> void:
+	if previous_progress < 0.8 and time.progress() >= 0.8:
+		_emit_audio("day.dusk_warning", {"progress": time.progress()})
+
 ## Tool crafting is owned by ResourceManager; these thin wrappers keep the
 ## public game API convenient for HUDs, tests, and future crafting stations
 ## without introducing a second source of truth.
@@ -529,6 +587,9 @@ func craft_axe() -> Dictionary:
 	var result: Dictionary = resources.craft_axe()
 	if bool(result.get("ok", false)):
 		daily_log.append(str(result.get("reason", "制作了石斧。")))
+		_emit_audio("craft.complete", {"recipe_id": "axe"})
+	else:
+		_emit_audio("craft.failed", {"recipe_id": "axe"})
 	return result
 
 func craft_pickaxe() -> Dictionary:
@@ -537,6 +598,9 @@ func craft_pickaxe() -> Dictionary:
 	var result: Dictionary = resources.craft_pickaxe()
 	if bool(result.get("ok", false)):
 		daily_log.append(str(result.get("reason", "制作了石镐。")))
+		_emit_audio("craft.complete", {"recipe_id": "pickaxe"})
+	else:
+		_emit_audio("craft.failed", {"recipe_id": "pickaxe"})
 	return result
 
 func craft_item(recipe_id: String) -> Dictionary:
@@ -561,8 +625,10 @@ func _night_settlement() -> Array[String]:
 			survivor.apply_change("hunger", 18)
 		else:
 			survivor.apply_change("hunger", -22); survivor.apply_change("health", -7); survivor.apply_change("morale", -8)
+			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_food", "amount": 7})
 	if meals < alive.size():
 		lines.append("食物不足：%d 人空腹，生命与士气下降。" % [alive.size() - meals])
+		_emit_audio("survival.food_warning", {"missing_meals": alive.size() - meals})
 	else: lines.append("配给完成：消耗 %d 食物。" % meals)
 	lines.append("夜间温度结算：低温伤害已在探索过程中实时计算。")
 	if weather == "暴雨":
@@ -579,6 +645,7 @@ func _night_settlement() -> Array[String]:
 	for survivor in survivors:
 		if survivor.alive and (survivor.health <= 0 or survivor.hunger <= 0):
 			survivor.apply_change("health", -12)
+			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_starvation", "amount": 12})
 			if not survivor.alive: lines.append("%s 没能撑过这一夜。" % survivor.display_name)
 	return lines
 
@@ -600,10 +667,21 @@ func load_state() -> bool:
 	return true
 
 func to_dict() -> Dictionary:
+	var result: Dictionary = _legacy_to_dict()
+	result.erase("audio")
+	result.erase("safety")
+	return result
+
+func _legacy_to_dict() -> Dictionary:
 	var survivor_data: Array = []
 	for survivor in survivors: survivor_data.append(survivor.to_dict())
 	var world_data: Dictionary = exploration_world.serialize_state() if exploration_world != null else {"in_house":in_house,"outdoor_position":[outdoor_position.x, outdoor_position.y]}
+	var safety = null
+
 	return {"version":SAVE_VERSION,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"night_context":night_context.duplicate(true),"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data,"audio":audio.to_dict() if audio != null else {}}
+
+	return {"version":SAVE_VERSION,"random_seed":random_seed,"rng_state":rng.state,"day":day,"phase":phase,"weather":weather,"environment_temperature":environment_temperature,"exploration_mode":exploration_mode,"day_return_required":day_return_required,"night_settlement_applied":night_settlement_applied,"night_context":night_context.duplicate(true),"survivors":survivor_data,"resources":resources.to_dict(),"time":time.to_dict(),"buildings":buildings.to_dict(),"events":events.to_dict(),"survival":survival.to_dict(),"daily_log":daily_log,"report_lines":report_lines,"key_choices":key_choices,"no_food_days":no_food_days,"safety":safety,"won":won,"end_reason":end_reason,"house_id":house_id,"house_level":house_level,"house_fire_lit":house_fire_lit,"fire_states":fire_states.duplicate(true),"built_facilities":built_facilities,"construction_skill":construction_skill.to_dict(),"blueprints":blueprints.to_dict(),"crafting":{"torch_bonus_pending":torch_bonus_pending,"deployed_traps":deployed_traps},"world":world_data}
+
 
 func from_dict(data: Dictionary) -> void:
 	var raw_version := int(data.get("version", 0))
@@ -678,5 +756,23 @@ func from_dict(data: Dictionary) -> void:
 	in_house = bool(world_data.get("in_house", false))
 	var saved_position = world_data.get("outdoor_position", [180, 155])
 	if saved_position is Array and saved_position.size() >= 2: outdoor_position = Vector2(float(saved_position[0]), float(saved_position[1]))
-	if audio != null: audio.from_dict(data.get("audio", {}))
+	var legacy_audio: Variant = data.get("audio", {})
+	if legacy_audio is Dictionary and not legacy_audio.is_empty():
+		var service := _audio_service()
+		if service != null:
+			service.apply_settings(legacy_audio)
 	if exploration_world != null: exploration_world.restore_state(world_data)
+
+func _refresh_world_audio_context() -> void:
+	if exploration_world != null and exploration_world.has_method("_refresh_audio_context"):
+		exploration_world._refresh_audio_context()
+
+func _audio_service() -> Node:
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree:
+		var service := (main_loop as SceneTree).root.get_node_or_null("AudioService")
+		if service != null and service.has_method("apply_settings"):
+			return service
+	if audio != null and audio.has_method("apply_settings"):
+		return audio
+	return null

@@ -134,3 +134,11 @@ HUD 和地图标签关闭字体抗锯齿与亚像素定位，保持中文像素�
 ```
 
 脚本遇到第一个非零退出码就停止，全部完成时会输出 `ALL_TESTS_OK count=36`。Godot 退出时的 ObjectDB/resource-leak 提示是测试脚本退出清理提示，不代表测试断言失败；真正失败以解析错误、断言失败或非零退出码为准。
+
+音频回归单独运行：
+
+```powershell
+.\tools\run_audio_regressions.ps1
+```
+
+脚本遇到第一个非零退出码就停止，全部完成时会输出 `AUDIO_TESTS_OK count=4`。
