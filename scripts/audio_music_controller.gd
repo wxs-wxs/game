@@ -23,7 +23,7 @@ func set_music(id: String, stream: AudioStream, volume_db: float = 0.0) -> bool:
 	if id == active_music_id:
 		return false
 	active_music_id = id
-	if headless_mode or stream == null or _players.is_empty():
+	if headless_mode or stream == null or _players.is_empty() or not is_inside_tree():
 		return true
 	var next_index := 1 - _active_index
 	var next_player := _players[next_index]

@@ -9,7 +9,7 @@ var snapshots: Dictionary = {}
 const SNAPSHOT_TARGETS := {
 	"pause": {"Music": -8.0, "Environment": -18.0, "World": -24.0},
 	"modal": {"Music": -5.0, "Environment": -12.0, "World": -18.0},
-	"danger": {},
+	"danger": {"Music": -2.0, "World": -6.0, "Critical": 0.0},
 	"interior": {"World": -3.0},
 	"game_over": {"Environment": -80.0, "World": -80.0},
 }

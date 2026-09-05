@@ -138,6 +138,10 @@ func set_world_state(state: Dictionary) -> void:
 		push_snapshot("interior")
 	else:
 		pop_snapshot("interior")
+	if str(world_state.get("threat", "low")) in ["high", "critical", "danger"]:
+		push_snapshot("danger")
+	else:
+		pop_snapshot("danger")
 	_recompute_snapshots()
 	_world_state_applied = true
 
@@ -201,6 +205,8 @@ func _music_id_for_state(state: Dictionary) -> String:
 		return "night_report"
 	if phase in ["menu", "main_menu"]:
 		return "menu"
+	if state.get("threat", "low") in ["high", "critical", "danger"]:
+		return "exploration_threat"
 	if location == "interior" or location == "inside":
 		return "interior"
 	if weather in ["rain", "storm", "heavy_rain", "暴雨", "小雨"]:
