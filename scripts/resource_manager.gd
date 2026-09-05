@@ -43,13 +43,26 @@ const SOURCE_RULES := {
 	"wood": ["field_branch", "branch", "forest_berries", "forest_tree"]
 }
 
-var amounts: Dictionary = {"food":12, "wood":10, "medicine":3, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0, "cooked_food":0, "bandage":0, "torch":0, "trap":0, "fish_carp":0, "fish_bass":0, "fish_trout":0, "fish_eel":0, "cooked_fish_carp":0, "cooked_fish_bass":0, "cooked_fish_trout":0, "cooked_fish_eel":0}
-var capacities: Dictionary = {"food":30, "wood":35, "medicine":15, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30, "cooked_food":30, "bandage":30, "torch":30, "trap":30, "fish_carp":30, "fish_bass":30, "fish_trout":30, "fish_eel":30, "cooked_fish_carp":30, "cooked_fish_bass":30, "cooked_fish_trout":30, "cooked_fish_eel":30}
-var total_collected: int = 0
+## Domain services are exposed for newer callers while the dictionaries below
+## remain live aliases for the legacy ResourceManager API.
+var catalog: ResourceCatalog
+var ledger: ResourceLedger
+var inventory_state: InventoryState
+var amounts: Dictionary
+var capacities: Dictionary
+var total_collected: int:
+	get:
+		return ledger.total_collected if ledger != null else 0
+	set(value):
+		if ledger != null: ledger.total_collected = value
 var tools: Dictionary = {"axe": false, "pickaxe": false}
-var backpack: Dictionary = {}
-var storage: Dictionary = {}
-var backpack_capacity := BACKPACK_BASE_CAPACITY
+var backpack: Dictionary
+var storage: Dictionary
+var backpack_capacity: int:
+	get:
+		return inventory_state.backpack_capacity if inventory_state != null else BACKPACK_BASE_CAPACITY
+	set(value):
+		if inventory_state != null: inventory_state.backpack_capacity = value
 ## Standalone ResourceManager callers remain backwards compatible. GameManager
 ## explicitly disables this until its canonical workbench is completed.
 var workbench_available := true
@@ -74,9 +87,18 @@ var pickaxe: bool:
 var unlocked_tools: Array[String] = ["axe", "pickaxe"]
 
 func _init() -> void:
+	catalog = ResourceCatalog.new()
+	inventory_state = InventoryState.new(catalog)
+	ledger = ResourceLedger.new(catalog, inventory_state)
+	_bind_state_aliases()
 	for key in ITEM_KEYS:
-		backpack[key] = 0
 		storage[key] = int(amounts.get(key, 0)) if key in RESOURCE_KEYS else 0
+
+func _bind_state_aliases() -> void:
+	amounts = ledger.amounts
+	capacities = ledger.capacities
+	backpack = inventory_state.backpack
+	storage = inventory_state.storage
 
 func get_amount(key: String) -> int:
 	return int(amounts.get(key, 0))
@@ -448,19 +470,14 @@ func to_dict() -> Dictionary:
 	return {"amounts":amounts, "capacities":capacities, "total_collected":total_collected, "tools":tools, "unlocked_tools":unlocked_tools, "backpack":backpack, "storage":storage, "workbench_available":workbench_available}
 
 func from_dict(data: Dictionary) -> void:
-	var old_amounts: Dictionary = data.get("amounts", {})
-	var old_capacities: Dictionary = data.get("capacities", {})
+	var saved_amounts = data.get("amounts", {})
+	var saved_capacities = data.get("capacities", {})
 	for key in ITEM_KEYS:
-		if old_amounts.has(key): amounts[key] = maxi(0, int(old_amounts[key]))
-		if old_capacities.has(key): capacities[key] = maxi(1, int(old_capacities[key]))
-	backpack = {}
-	storage = {}
-	var saved_backpack = data.get("backpack", {})
-	var saved_storage = data.get("storage", {})
-	for key in ITEM_KEYS:
-		backpack[key] = maxi(0, int(saved_backpack.get(key, 0))) if saved_backpack is Dictionary else 0
-		var default_storage := int(amounts.get(key, 0)) if key in RESOURCE_KEYS else 0
-		storage[key] = maxi(0, int(saved_storage.get(key, default_storage))) if saved_storage is Dictionary else default_storage
+		if saved_amounts is Dictionary and saved_amounts.has(key): ledger.amounts[key] = maxi(0, int(saved_amounts[key]))
+		if saved_capacities is Dictionary and saved_capacities.has(key): ledger.capacities[key] = maxi(1, int(saved_capacities[key]))
+	ledger.total_collected = int(data.get("total_collected", 0))
+	inventory_state.from_dict(data)
+	_bind_state_aliases()
 	backpack_capacity = BACKPACK_BASE_CAPACITY
 	workbench_available = bool(data.get("workbench_available", true))
 	total_collected = int(data.get("total_collected", 0))
