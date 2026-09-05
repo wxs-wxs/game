@@ -4,6 +4,7 @@ extends Node
 const GLOBAL_POOL_SIZE := 8
 const CRITICAL_RESERVED := 1
 const GROUP_LIMITS := {"World": 4, "UI": 4, "Critical": 2, "Fire": 2, "SFX": 4}
+const UNLIMITED_MAX_DISTANCE := 1000000.0
 
 var headless_mode: bool = false
 var listener_position := Vector2.ZERO
@@ -19,6 +20,10 @@ func initialize(headless: bool) -> void:
 		_listener = AudioListener2D.new()
 		_listener.position = listener_position
 		add_child(_listener)
+		_listener.make_current()
+
+func _ready() -> void:
+	if not headless_mode and _listener != null:
 		_listener.make_current()
 
 func set_listener_position(position: Vector2) -> void:
@@ -79,7 +84,7 @@ func _steal_or_drop(cue: AudioCue, group: String, now: int, stream: AudioStream,
 		var item := _active[index]
 		if item.get("group", "") != group:
 			continue
-		if cue.steal_policy == "oldest" and int(item.get("started_ms", 0)) < oldest:
+		if cue.steal_policy == "oldest" and int(item.get("priority", 0)) < cue.priority and int(item.get("started_ms", 0)) < oldest:
 			oldest = int(item.get("started_ms", 0))
 			candidate_index = index
 		elif cue.steal_policy == "lowest_priority" and int(item.get("priority", 0)) < cue.priority and int(item.get("priority", 0)) < candidate_priority:
@@ -129,8 +134,10 @@ func _start_player(player: Node, cue: AudioCue, stream: AudioStream, params: Dic
 			player.pitch_scale = float(params["pitch_scale"])
 	if player is AudioStreamPlayer2D:
 		player.position = params.get("position", listener_position)
-		if cue.max_distance > 0.0:
-			player.max_distance = cue.max_distance
+		# Godot rejects zero on AudioStreamPlayer2D; retain the logical zero and
+		# use a far bound for cues without a distance limit.
+		player.set_meta("audio_max_distance", cue.max_distance)
+		player.max_distance = cue.max_distance if cue.max_distance > 0.0 else UNLIMITED_MAX_DISTANCE
 	if not player.is_inside_tree():
 		return false
 	player.play()

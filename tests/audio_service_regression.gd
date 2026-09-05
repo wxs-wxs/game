@@ -89,13 +89,16 @@ func _init() -> void:
 	get_root().add_child(routing)
 	routing.set_listener_position(Vector2(40, 50))
 	assert(routing._listener != null and routing._listener.position == Vector2(40, 50))
+	if routing.is_inside_tree():
+		assert(routing._listener.is_current(), "scene-tree listener should be current")
 	var wav: AudioStream = service._silent()
 	var world_cue := _cue("world.test", "World", "none", 10, "oldest")
 	world_cue.max_instances = 1
 	assert(routing.play_cue(world_cue, wav) == "played")
 	var first_player: Node = routing._players[0]
+	assert(routing.play_cue(world_cue, wav) == "suppressed", "oldest must reject equal priority")
 	world_cue.priority = 20
-	assert(routing.play_cue(world_cue, wav) == "played", "oldest policy should reclaim same-group player")
+	assert(routing.play_cue(world_cue, wav) == "played", "oldest may reclaim a lower-priority same-group player")
 	assert(routing.active_count("World") == 1)
 	assert(first_player.bus == "World")
 	var spatial_cue := _cue("spatial.test", "World", "point", 30, "drop")
@@ -105,6 +108,9 @@ func _init() -> void:
 	assert(spatial_player is AudioStreamPlayer2D)
 	assert(is_equal_approx(spatial_player.max_distance, 123.0))
 	assert(spatial_player.position == Vector2(7, 9))
+	var spatial_reset := _cue("spatial.reset", "World", "point", 30, "drop")
+	assert(routing.play_cue(spatial_reset, wav) == "played")
+	assert(is_equal_approx(float(spatial_player.get_meta("audio_max_distance")), 0.0), "reused spatial player resets logical max_distance")
 	var ui_cue := _cue("ui.test", "UI", "none", 30, "drop")
 	assert(routing.play_cue(ui_cue, wav) == "played")
 	assert(routing._players.size() == 2, "spatial and non-spatial pools must not cross-reuse")
@@ -129,7 +135,8 @@ func _init() -> void:
 	assert(ambience.fade_seconds > 0.0)
 	assert(ambience.active_layers.has("Environment"))
 	ambience.set_layers({}, {})
-	assert(ambience.active_layers.is_empty())
+	ambience.set_layers({"Environment": "loop"}, {"Environment": wav})
+	assert(ambience.active_layers.has("Environment"), "rapid ambience reactivation should remain active")
 	print("AUDIO_SERVICE_OK buses=%d events=%d music=%s layers=%d" % [BUS_PARENTS.size(), service.event_log.size(), service.active_music_id, service.active_ambience_layers.size()])
 	for node in [ambience, music, routing, restored, service]:
 		if is_instance_valid(node):
