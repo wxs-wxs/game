@@ -18,8 +18,9 @@
 
 `scripts/core/` 和 `scripts/domain/` 中禁止引用 `UIController`、
 `ExplorationWorld`、`get_parent()`、`/root/Main` 或直接访问 `game.ui`。
-它们也禁止直接写入其他模块的 `amounts`、`backpack`、`storage`、`phase`
-字段。违反时检查器输出 `ARCHITECTURE_BOUNDARY_FAIL <path>:<line> <rule>`
+它们也禁止通过带接收者的表达式直接写入其他模块的 `amounts`、`backpack`、
+`storage`、`phase` 字段（包括链式属性、属性/字典索引和复合赋值）。未限定
+接收者的同名字段写入无法静态判断归属，因此不在此规则范围内。违反时检查器输出 `ARCHITECTURE_BOUNDARY_FAIL <path>:<line> <rule>`
 并返回退出码 1；无违反时输出 `ARCHITECTURE_BOUNDARY_OK` 并返回 0。
 
 ## 受保护文件
