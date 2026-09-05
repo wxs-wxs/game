@@ -13,8 +13,9 @@ $rules = @(
     [pscustomobject]@{ Pattern = '\bget_parent\s*\('; Rule = 'core/domain must not use get_parent()' }
     [pscustomobject]@{ Pattern = '/root/Main'; Rule = 'core/domain must not depend on /root/Main' }
     [pscustomobject]@{ Pattern = '\bgame\.ui\b'; Rule = 'core/domain must not access game.ui directly' }
-    [pscustomobject]@{ Pattern = '(?:\$?[A-Za-z_]\w*)\.(?:amounts|backpack|storage|phase)\s*='; Rule = 'core/domain must not write another module field directly' }
-    [pscustomobject]@{ Pattern = '^\s*(?!var\s+)(?:amounts|backpack|storage|phase)\s*='; Rule = 'core/domain must not write another module field directly' }
+    [pscustomobject]@{ Pattern = '(?:\$?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]]+\])*)\.(?:amounts|backpack|storage|phase)(?:\[[^\]]+\])?\s*(?:=|\+=|-=|\*=|/=|%=)'; Rule = 'core/domain must not write another module field directly' }
+    [pscustomobject]@{ Pattern = '(?:\$?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]]+\])*)\[\s*["'']?(?:amounts|backpack|storage|phase)["'']?\s*\](?:\[[^\]]+\])?\s*(?:=|\+=|-=|\*=|/=|%=)'; Rule = 'core/domain must not write another module field directly' }
+    [pscustomobject]@{ Pattern = '^\s*(?!var\s+)(?:amounts|backpack|storage|phase)(?:\[[^\]]+\])?\s*(?:=|\+=|-=|\*=|/=|%=)'; Rule = 'core/domain must not write another module field directly' }
 )
 
 $violations = @()
