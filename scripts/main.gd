@@ -1,9 +1,12 @@
 extends Node2D
 
+const InputRouter = preload("res://scripts/presentation/input/input_router.gd")
+
 var game: GameManager
 var world: ExplorationWorld
 var ui: UIController
 var audio
+var input_router = InputRouter.new()
 var refresh_accumulator := 0.0
 
 func _ready() -> void:
@@ -30,43 +33,74 @@ func _process(delta: float) -> void:
 		ui.refresh()
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		if _input_action_pressed(event, "pause_menu", KEY_ESCAPE) and ui != null and ui.close_overlay():
-			return
-		if _input_action_pressed(event, "pause_game", KEY_SPACE):
-			if ui.has_pause_overlay():
+	var result: Dictionary = input_router.route(event, _input_state())
+	if not bool(result.get("handled", false)):
+		return
+	_apply_input_intent(result)
+
+func _input_state() -> Dictionary:
+	var build_active: bool = world != null and world.build_mode != null and world.build_mode.active
+	var interaction_active: bool = world != null and world.is_interacting()
+	var pause_overlay_open: bool = ui != null and ui.has_pause_overlay()
+	var menu_paused: bool = ui != null and ui.paused_by_menu
+	return {
+		"overlay_open": pause_overlay_open or menu_paused,
+		"pause_overlay_open": pause_overlay_open,
+		"paused_by_menu": menu_paused,
+		"build_active": build_active,
+		"interaction_active": interaction_active,
+	}
+
+func _apply_input_intent(result: Dictionary) -> void:
+	var kind := str(result.get("kind", ""))
+	var payload_variant: Variant = result.get("payload", {})
+	var payload: Dictionary = payload_variant if payload_variant is Dictionary else {}
+	match kind:
+		"cancel":
+			if str(payload.get("scope", "")) == "overlay":
+				if ui != null: ui.close_overlay()
 				return
-			if ui.paused_by_menu: ui._on_resume()
-			else: game.toggle_pause()
-		elif _input_action_pressed(event, "pause_menu", KEY_ESCAPE):
 			if world != null and (world.is_interacting() or (world.build_mode != null and world.build_mode.active)):
 				world.cancel_interaction()
-				world.build_mode.active = false
-			else:
-				ui.toggle_pause_menu()
-		elif _input_action_pressed(event, "build_mode", KEY_B):
-			ui.toggle_build_mode()
-		elif _input_action_pressed(event, "backpack_toggle", KEY_K):
-			ui.toggle_backpack()
-		elif _input_action_pressed(event, "shortcut_help", KEY_H):
-			ui._toggle_shortcut_panel()
-		elif _input_action_pressed(event, "build_cycle", KEY_Q):
+				if world.build_mode != null: world.build_mode.active = false
+				_mark_input_handled()
+		"pause":
+			var action := str(payload.get("action", ""))
+			if action == "blocked_by_overlay":
+				return
+			if action == "resume_menu":
+				if ui != null: ui._on_resume()
+			elif action == "toggle_menu":
+				if ui != null: ui.toggle_pause_menu()
+			elif action == "toggle_game" and game != null:
+				game.toggle_pause()
+		"build_mode":
+			if ui != null: ui.toggle_build_mode()
+		"backpack":
+			if ui != null: ui.toggle_backpack()
+		"shortcut_help":
+			if ui != null: ui._toggle_shortcut_panel()
+		"build_cycle":
 			if world != null and world.build_mode != null and world.build_mode.active:
 				world.build_mode.cycle_blueprint()
-				get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_F5 or event.physical_keycode == KEY_F5:
-			ui.save_game()
-		elif event.keycode == KEY_F9 or event.physical_keycode == KEY_F9:
-			ui.load_game()
-		elif event.keycode == KEY_U or event.physical_keycode == KEY_U:
-			ui.upgrade_house()
-		elif event.keycode == KEY_P or event.physical_keycode == KEY_P:
-			ui.cycle_policy()
+				_mark_input_handled()
+		"save":
+			if ui != null: ui.save_game()
+		"load":
+			if ui != null: ui.load_game()
+		"upgrade":
+			if ui != null: ui.upgrade_house()
+		"policy":
+			if ui != null: ui.cycle_policy()
+		"interact":
+			if bool(payload.get("blocked", false)):
+				if not bool(payload.get("build_active", false)): _mark_input_handled()
+				return
+			if world != null:
+				world.try_interact()
+				_mark_input_handled()
 
-func _input_action_pressed(event: InputEvent, action: StringName, fallback_key: Key) -> bool:
-	if event.is_action_pressed(action):
-		return true
-	if event is InputEventKey:
-		var key_event := event as InputEventKey
-		return key_event.pressed and not key_event.echo and (key_event.keycode == fallback_key or key_event.physical_keycode == fallback_key)
-	return false
+func _mark_input_handled() -> void:
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.set_input_as_handled()

@@ -5,6 +5,10 @@ const BlueprintSystemClass = preload("res://scripts/blueprint_system.gd")
 const ConstructionSkillClass = preload("res://scripts/construction_skill.gd")
 const SurvivalDirectorClass = preload("res://scripts/survival_director.gd")
 const CraftingSystemClass = preload("res://scripts/crafting_system.gd")
+const DayCycleServiceClass = preload("res://scripts/domain/survival/day_cycle_service.gd")
+const TemperatureServiceClass = preload("res://scripts/domain/survival/temperature_service.gd")
+const FireStateServiceClass = preload("res://scripts/domain/survival/fire_state_service.gd")
+const NightSettlementServiceClass = preload("res://scripts/domain/survival/night_settlement_service.gd")
 
 const PHASE_MORNING := "morning"
 const PHASE_DAY := "day"
@@ -13,10 +17,10 @@ const PHASE_REPORT := "report"
 const PHASE_ENDED := "ended"
 const SAVE_VERSION := 9
 
-const NORMAL_BODY_TEMPERATURE_C := 37.0
-const BODY_TEMPERATURE_DAMAGE_THRESHOLD_C := 35.0
-const BODY_TEMPERATURE_DAMAGE_INTERVAL := 8.0
-const WEATHER_TEMPERATURES := {"晴朗": 16.0, "多云": 11.0, "浓雾": 7.0, "暴雨": 9.0, "寒冷": -5.0}
+const NORMAL_BODY_TEMPERATURE_C = TemperatureServiceClass.NORMAL_BODY_TEMPERATURE_C
+const BODY_TEMPERATURE_DAMAGE_THRESHOLD_C = TemperatureServiceClass.BODY_TEMPERATURE_DAMAGE_THRESHOLD_C
+const BODY_TEMPERATURE_DAMAGE_INTERVAL = TemperatureServiceClass.BODY_TEMPERATURE_DAMAGE_INTERVAL
+const WEATHER_TEMPERATURES = TemperatureServiceClass.WEATHER_TEMPERATURES
 
 var resources := ResourceManager.new()
 var time := TimeManager.new()
@@ -28,6 +32,10 @@ var blueprints = BlueprintSystemClass.new()
 var construction_skill = ConstructionSkillClass.new()
 var survival = SurvivalDirectorClass.new()
 var crafting = CraftingSystemClass.new()
+var _day_cycle_service
+var _temperature_service
+var _fire_state_service
+var _night_settlement_service
 var audio
 var exploration_world
 var in_house := false
@@ -73,6 +81,10 @@ func _init() -> void:
 	new_game(random_seed)
 
 func new_game(seed_value: int = 14072026) -> void:
+	_day_cycle_service = DayCycleServiceClass.new()
+	_temperature_service = TemperatureServiceClass.new()
+	_fire_state_service = FireStateServiceClass.new()
+	_night_settlement_service = NightSettlementServiceClass.new()
 	random_seed = seed_value
 	rng.seed = random_seed
 	resources = ResourceManager.new()
@@ -116,14 +128,13 @@ func start_exploration() -> void:
 func advance_exploration(delta: float) -> void:
 	if check_protagonist_health(): return
 	if not exploration_mode or phase != PHASE_DAY or time.paused or day_return_required: return
-	var before_elapsed := time.elapsed
 	var before_progress := time.progress()
-	time.advance(delta)
-	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	var advanced: Dictionary = _day_cycle_service.advance(time, phase, delta)
+	_update_temperature(maxf(0.0, float(advanced.get("elapsed_after", time.elapsed)) - float(advanced.get("elapsed_before", time.elapsed))))
 	_emit_dusk_warning_if_crossed(before_progress)
 	survival.observe_resources(self)
 	if check_protagonist_health(): return
-	if time.is_finished():
+	if bool(advanced.get("finished", false)):
 		day_return_required = true
 
 func begin_morning() -> void:
@@ -155,25 +166,31 @@ func _resolve_night() -> Dictionary:
 	if night_settlement_applied:
 		return {"ok": false, "phase": phase, "reason": "今天已经结算。"}
 	night_settlement_applied = true
-	night_context = {
-		"day": day,
-		"weather": weather,
-		"resource_before": resources.to_dict(),
-		"temperature_before": environment_temperature,
-		"completed_buildings": _canonical_built_ids()
-	}
-	report_lines = _night_settlement()
-	report_lines.append_array(survival.settle_day(self))
-	if check_protagonist_health():
+	var context := _night_context_input()
+	# Each settlement starts a fresh report; the previous report is retained for
+	# the UI but must not be fed back into the domain service.
+	context["report_lines"] = []
+	var result: Dictionary = _night_settlement_service.resolve(context)
+	report_lines = result.get("report_lines", [])
+	no_food_days = int(result.get("no_food_days", no_food_days))
+	night_context = result.get("night_context", {})
+	if bool(result.get("health_depleted", false)):
+		# The service reports death decisions, while the facade remains the one
+		# terminal-state/audio owner.  Skip those two reports and let the guard
+		# below emit them exactly once.
+		for audio_event in result.get("audio_events", []):
+			if audio_event is Dictionary and str(audio_event.get("id", "")) not in ["player.death", "game.over", "night.report"]:
+				_emit_audio(str(audio_event.get("id", "")), audio_event.get("params", {}))
+		check_protagonist_health()
 		return {"ok": true, "phase": phase, "reason": "主角生命值归零，游戏结束。"}
-	var created := events.create_weighted_event(rng, survival.event_context(self))
-	if created.is_empty(): phase = PHASE_REPORT
-	else:
-		phase = PHASE_EVENT
-		_emit_audio("event.reveal", {"event_id": str(created.get("id", ""))})
+	phase = str(result.get("phase", PHASE_REPORT))
+	for audio_event in result.get("audio_events", []):
+		if audio_event is Dictionary and str(audio_event.get("id", "")) != "night.report":
+			_emit_audio(str(audio_event.get("id", "")), audio_event.get("params", {}))
 	_refresh_world_audio_context()
-	if audio != null:
-		audio.emit_event("night.report")
+	for audio_event in result.get("audio_events", []):
+		if audio_event is Dictionary and str(audio_event.get("id", "")) == "night.report":
+			_emit_audio("night.report", audio_event.get("params", {}))
 	return {"ok": true, "phase": phase, "reason": "夜间结算完成。"}
 
 func _finish_exploration_day() -> void:
@@ -193,15 +210,15 @@ func start_day() -> Dictionary:
 func tick(delta: float) -> bool:
 	if check_protagonist_health(): return false
 	if phase != PHASE_DAY: return false
-	var before_elapsed := time.elapsed
 	var before_progress := time.progress()
-	var task_ticks := time.advance(delta)
-	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	var advanced: Dictionary = _day_cycle_service.advance(time, phase, delta)
+	var task_ticks: int = int(advanced.get("ticks", 0))
+	_update_temperature(maxf(0.0, float(advanced.get("elapsed_after", time.elapsed)) - float(advanced.get("elapsed_before", time.elapsed))))
 	_emit_dusk_warning_if_crossed(before_progress)
-	for index in task_ticks:
+	for index in range(task_ticks):
 		_resolve_work_tick()
 		if check_protagonist_health(): return true
-	if time.is_finished():
+	if bool(advanced.get("finished", false)):
 		finish_day()
 		return true
 	return task_ticks > 0
@@ -212,12 +229,15 @@ func finish_day() -> void:
 
 func force_finish_day() -> void:
 	if phase != PHASE_DAY: return
-	var before_elapsed := time.elapsed
 	var before_progress := time.progress()
+	var prior_work_accumulator := time.work_accumulator
 	var remaining_ticks: int = time.remaining_work_ticks()
 	for index in range(maxi(0, remaining_ticks)): _resolve_work_tick()
-	time.elapsed = TimeManager.DAY_SECONDS
-	_update_temperature(maxf(0.0, time.elapsed - before_elapsed))
+	var advanced: Dictionary = _day_cycle_service.advance(time, phase, TimeManager.DAY_SECONDS - time.elapsed)
+	# Force-finish historically resolves pending work without consuming the
+	# clock's fractional accumulator; retain that save-visible behavior.
+	time.work_accumulator = prior_work_accumulator
+	_update_temperature(maxf(0.0, float(advanced.get("elapsed_after", time.elapsed)) - float(advanced.get("elapsed_before", time.elapsed))))
 	_emit_dusk_warning_if_crossed(before_progress)
 	finish_day()
 
@@ -376,84 +396,67 @@ func _fire_config() -> Dictionary:
 
 func _default_fire_states() -> Dictionary:
 	var config := _fire_config()
-	var capacity := maxf(0.1, float(config.get("fuel_capacity", 360.0)))
-	var per_wood := maxf(0.1, float(config.get("fuel_per_wood", 120.0)))
-	return {
-		"campfire": {"lit": false, "fuel_remaining": 0.0, "fuel_capacity": capacity, "fuel_per_wood": per_wood},
-		"house_fireplace": {"lit": false, "fuel_remaining": 0.0, "fuel_capacity": capacity, "fuel_per_wood": per_wood}
-	}
+	return _fire_state_service.default_states(config)
 
 func fire_state(source_id: String) -> Dictionary:
 	var state: Dictionary = fire_states.get(source_id, {})
 	return state.duplicate(true)
 
 func add_fire_fuel(source_id: String, wood: int = 1) -> Dictionary:
-	if wood <= 0 or not fire_states.has(source_id):
-		return {"ok": false, "reason": "无法添加燃料。"}
-	var state: Dictionary = fire_states[source_id]
-	if not resources.can_afford({"wood": wood}):
-		return {"ok": false, "reason": resources.missing_cost_text({"wood": wood})}
-	var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
-	var per_wood := maxf(0.1, float(state.get("fuel_per_wood", 120.0)))
-	var available := maxf(0.0, float(state.get("fuel_capacity", 360.0)) - float(state.get("fuel_remaining", 0.0)))
-	var accepted_wood := mini(wood, int(ceil(available / per_wood)))
-	var added := minf(float(accepted_wood) * per_wood, available)
-	if accepted_wood <= 0 or added <= 0.0:
-		return {"ok": false, "reason": "燃料已经满了。"}
-	resources.spend({"wood": accepted_wood})
-	state["fuel_remaining"] = float(state.get("fuel_remaining", 0.0)) + added
-	state["lit"] = true
-	fire_states[source_id] = state
+	var result: Dictionary = _fire_state_service.add_fuel(fire_states, source_id, wood, resources, _fire_config())
+	if not bool(result.get("ok", false)):
+		return result
 	_refresh_world_audio_context()
-	return {"ok": true, "reason": "火焰重新燃旺。", "state": state.duplicate(true)}
+	return result
 
 func tick_fire(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	var before_states := fire_states.duplicate(true)
+	var extinguished: Array[String] = _fire_state_service.tick(fire_states, delta)
 	var changed := false
-	for source_id in fire_states.keys():
+	for source_id in before_states.keys():
+		var previous: Dictionary = before_states[source_id]
 		var state: Dictionary = fire_states[source_id]
-		var was_lit := bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
-		var before_remaining := float(state.get("fuel_remaining", 0.0))
-		var remaining := maxf(0.0, float(state.get("fuel_remaining", 0.0)) - delta)
-		state["fuel_remaining"] = remaining
-		if remaining <= 0.0:
-			state["lit"] = false
-			if was_lit and before_remaining > 0.0:
-				if audio != null:
-					audio.emit_event("fire.extinguish")
-				changed = true
-		elif before_remaining > 20.0 and remaining <= 20.0 and was_lit:
-			if audio != null:
-				audio.emit_event("fire.fuel_low")
+		var before_remaining := float(previous.get("fuel_remaining", 0.0))
+		var remaining := float(state.get("fuel_remaining", 0.0))
+		var was_lit := bool(previous.get("lit", false)) and before_remaining > 0.0
+		if str(source_id) in extinguished:
+			_emit_audio("fire.extinguish")
 			changed = true
-		fire_states[source_id] = state
+		elif before_remaining > 20.0 and remaining <= 20.0 and was_lit:
+			_emit_audio("fire.fuel_low")
+			changed = true
 	if changed:
 		_refresh_world_audio_context()
 
 func is_fire_active(source_id: String) -> bool:
-	var state: Dictionary = fire_states.get(source_id, {})
-	return bool(state.get("lit", false)) and float(state.get("fuel_remaining", 0.0)) > 0.0
+	return _fire_state_service.is_active(fire_states, source_id)
 
 func get_environment_temperature() -> float:
-	var base := float(WEATHER_TEMPERATURES.get(weather, 12.0))
-	var daylight := sin(clampf(time.progress(), 0.0, 1.0) * PI) * 7.0
-	var temperature := base + daylight
 	var fire_config := _fire_config()
-	if in_house: temperature += 10.0
-	if in_house and is_fire_active("house_fireplace"): temperature += float(fire_config.get("house_fireplace_warmth", 7.0))
-	if buildings != null and buildings.has("fire_basin"): temperature += 4.0
+	var daylight := sin(clampf(time.progress(), 0.0, 1.0) * PI) * 7.0
+	var effective_fire_states := fire_states.duplicate(true)
 	if not in_house:
 		var position := outdoor_position
 		if exploration_world != null and exploration_world.player != null:
 			position = exploration_world.player.global_position
-		if is_fire_active("campfire") and position.distance_to(Vector2(210, 153)) <= 110.0: temperature += float(fire_config.get("campfire_warmth", 6.0))
-	environment_temperature = snappedf(temperature, 0.1)
+		if position.distance_to(Vector2(210, 153)) > 110.0:
+			effective_fire_states.erase("campfire")
+	var effects := {
+		"daylight_bonus": daylight,
+		"fire_basin": buildings != null and buildings.has("fire_basin"),
+		"house_fireplace_warmth": float(fire_config.get("house_fireplace_warmth", 7.0)),
+		"campfire_warmth": float(fire_config.get("campfire_warmth", 6.0)),
+		"campfire_range": 110.0,
+		"campfire_position": Vector2(210, 153)
+	}
+	environment_temperature = _temperature_service.environment_temperature(weather, in_house, effective_fire_states, effects)
 	return environment_temperature
 
 func get_temperature_status() -> Dictionary:
 	var hero := get_protagonist()
-	return {"environment":get_environment_temperature(), "body":float(hero.body_temperature) if hero != null else NORMAL_BODY_TEMPERATURE_C, "threshold":BODY_TEMPERATURE_DAMAGE_THRESHOLD_C}
+	return _temperature_service.status(hero, get_environment_temperature())
 
 func _update_temperature(simulation_seconds: float) -> void:
 	if simulation_seconds <= 0.0: return
@@ -461,22 +464,13 @@ func _update_temperature(simulation_seconds: float) -> void:
 	var hero := get_protagonist()
 	if hero == null or not hero.alive: return
 	var environment := get_environment_temperature()
-	# Warm shelter aims at normal body temperature. Outdoors in a cold
-	# environment pulls the target down, so hypothermia develops over time.
-	var target := clampf(NORMAL_BODY_TEMPERATURE_C + (environment - 12.0) * 0.35, 28.0, NORMAL_BODY_TEMPERATURE_C)
-	var response := 0.006 if target < NORMAL_BODY_TEMPERATURE_C else 0.009
-	hero.body_temperature = clampf(hero.body_temperature + (target - hero.body_temperature) * response * simulation_seconds, -50.0, NORMAL_BODY_TEMPERATURE_C)
+	var result: Dictionary = _temperature_service.apply_damage(hero, simulation_seconds, {"environment_temperature": environment})
 	if hero.body_temperature < BODY_TEMPERATURE_DAMAGE_THRESHOLD_C:
 		_emit_audio("survival.temperature_warning", {"body_temperature": hero.body_temperature})
 		_emit_audio("player.cold_warning", {"body_temperature": hero.body_temperature})
-		hero.temperature_damage_accumulator += simulation_seconds
-		while hero.temperature_damage_accumulator >= BODY_TEMPERATURE_DAMAGE_INTERVAL:
-			hero.temperature_damage_accumulator -= BODY_TEMPERATURE_DAMAGE_INTERVAL
-			hero.apply_change("health", -1)
-			_emit_audio("player.hurt", {"source": "cold", "amount": 1, "body_temperature": hero.body_temperature})
-			if check_protagonist_health(): return
-	else:
-		hero.temperature_damage_accumulator = maxf(0.0, hero.temperature_damage_accumulator - simulation_seconds * 0.5)
+	for index in range(int(result.get("damage", 0))):
+		_emit_audio("player.hurt", {"source": "cold", "amount": 1, "body_temperature": hero.body_temperature})
+		if check_protagonist_health(): return
 
 func check_protagonist_health() -> bool:
 	if phase == PHASE_ENDED:
@@ -612,42 +606,26 @@ func use_item(item_id: String) -> Dictionary:
 	return crafting.use_item(item_id)
 
 func _night_settlement() -> Array[String]:
-	var lines: Array[String] = ["夜间结算"]
-	survival.observe_resources(self)
-	var alive: Array = []
-	for survivor in survivors:
-		if survivor.alive: alive.append(survivor)
-	var meals := mini(resources.get_amount("food"), alive.size())
-	resources.add("food", -meals)
-	for index in alive.size():
-		var survivor: Survivor = alive[index]
-		if index < meals:
-			survivor.apply_change("hunger", 18)
-		else:
-			survivor.apply_change("hunger", -22); survivor.apply_change("health", -7); survivor.apply_change("morale", -8)
-			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_food", "amount": 7})
-	if meals < alive.size():
-		lines.append("食物不足：%d 人空腹，生命与士气下降。" % [alive.size() - meals])
-		_emit_audio("survival.food_warning", {"missing_meals": alive.size() - meals})
-	else: lines.append("配给完成：消耗 %d 食物。" % meals)
-	lines.append("夜间温度结算：低温伤害已在探索过程中实时计算。")
-	if weather == "暴雨":
-		var collected_water := buildings.rain_water_yield()
-		if collected_water > 0:
-			var actual_water := resources.add("water", collected_water)
-			lines.append("暴雨收集：获得 %d 水。" % actual_water)
-	if weather == "暴雨" and rng.randf() < (0.35 if not in_house or house_level == 0 else 0.12):
-		var patient := random_alive()
-		if patient != null:
-			patient.sick = true; patient.apply_change("health", -4); lines.append("暴雨让 %s 着凉生病。" % patient.display_name)
-	if resources.get_amount("food") == 0: no_food_days += 1
-	else: no_food_days = 0
-	for survivor in survivors:
-		if survivor.alive and (survivor.health <= 0 or survivor.hunger <= 0):
-			survivor.apply_change("health", -12)
-			if survivor == get_protagonist(): _emit_audio("player.hurt", {"source": "night_starvation", "amount": 12})
-			if not survivor.alive: lines.append("%s 没能撑过这一夜。" % survivor.display_name)
-	return lines
+	var context := _night_context_input()
+	context["report_lines"] = []
+	var result: Dictionary = _night_settlement_service.settle(context)
+	report_lines = result.get("report_lines", [])
+	no_food_days = int(result.get("no_food_days", no_food_days))
+	night_context = result.get("night_context", {})
+	for audio_event in result.get("audio_events", []):
+		if audio_event is Dictionary:
+			_emit_audio(str(audio_event.get("id", "")), audio_event.get("params", {}))
+	return report_lines
+
+func _night_context_input() -> Dictionary:
+	return {
+		"day": day, "weather": weather, "temperature_before": environment_temperature,
+		"resources": resources, "survivors": survivors, "buildings": buildings,
+		"survival": survival, "events": events, "rng": rng, "fire_states": fire_states,
+		"house_level": house_level, "in_house": in_house,
+		"built_facilities": _canonical_built_ids(), "deployed_traps": deployed_traps,
+		"report_lines": report_lines, "no_food_days": no_food_days
+	}
 
 func _roll_weather() -> String:
 	var roll := rng.randi_range(0, 99)
@@ -684,6 +662,10 @@ func from_dict(data: Dictionary) -> void:
 	var raw_version := int(data.get("version", 0))
 	saves = SaveSystem.new()
 	data = saves.migrate(data)
+	_day_cycle_service = DayCycleServiceClass.new()
+	_temperature_service = TemperatureServiceClass.new()
+	_fire_state_service = FireStateServiceClass.new()
+	_night_settlement_service = NightSettlementServiceClass.new()
 	random_seed = int(data.get("random_seed", 14072026)); rng.seed = random_seed; rng.state = int(data.get("rng_state", rng.state))
 	resources = ResourceManager.new(); resources.from_dict(data.get("resources", {}))
 	time = TimeManager.new(); time.from_dict(data.get("time", {}))
@@ -700,15 +682,7 @@ func from_dict(data: Dictionary) -> void:
 	fire_states = _default_fire_states()
 	var saved_fire_states: Variant = data.get("fire_states", {})
 	if saved_fire_states is Dictionary:
-		for source_id in fire_states.keys():
-			var saved_state: Variant = saved_fire_states.get(source_id, {})
-			if saved_state is Dictionary:
-				var merged_state: Dictionary = fire_states[source_id].duplicate(true)
-				for key in saved_state:
-					merged_state[key] = saved_state[key]
-				merged_state["fuel_remaining"] = clampf(float(merged_state.get("fuel_remaining", 0.0)), 0.0, float(merged_state.get("fuel_capacity", 360.0)))
-				merged_state["lit"] = bool(merged_state.get("lit", false)) and float(merged_state.get("fuel_remaining", 0.0)) > 0.0
-				fire_states[source_id] = merged_state
+		fire_states = _fire_state_service.from_dict(fire_states, saved_fire_states)
 	if not data.has("blueprints"):
 		blueprints.unlock("storage_shelf"); blueprints.unlock("workbench")
 	day = int(data.get("day", 1)); phase = str(data.get("phase", PHASE_MORNING)); weather = str(data.get("weather", "晴朗")); environment_temperature = float(data.get("environment_temperature", WEATHER_TEMPERATURES.get(weather, 12.0))); exploration_mode = bool(data.get("exploration_mode", true)); day_return_required = bool(data.get("day_return_required", false)); night_settlement_applied = bool(data.get("night_settlement_applied", false)); night_context = data.get("night_context", {}) if data.get("night_context", {}) is Dictionary else {}

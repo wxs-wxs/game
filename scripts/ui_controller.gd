@@ -117,8 +117,24 @@ var _report_open := false
 var _audio_settings_open := false
 var _pixel_theme: Theme
 const PixelTheme := preload("res://scripts/pixel_ui_theme.gd")
+const UiFactory := preload("res://scripts/presentation/theme/ui_factory.gd")
+const HudView := preload("res://scripts/presentation/hud/hud_view.gd")
+const BackpackView := preload("res://scripts/presentation/overlays/backpack_view.gd")
+const StorageView := preload("res://scripts/presentation/overlays/storage_view.gd")
+const CraftingView := preload("res://scripts/presentation/overlays/crafting_view.gd")
+const BuildView := preload("res://scripts/presentation/overlays/build_view.gd")
+const EventReportView := preload("res://scripts/presentation/overlays/event_report_view.gd")
+const PauseOverlay := preload("res://scripts/presentation/overlays/pause_overlay.gd")
 const Assets := preload("res://scripts/ninja_adventure_assets.gd")
 const StorageTransferSlotClass := preload("res://scripts/storage_transfer_slot.gd")
+var _ui_factory: UiFactory
+var hud_view: HudView
+var backpack_view: BackpackView
+var storage_view: StorageView
+var crafting_view: CraftingView
+var build_view: BuildView
+var event_report_view: EventReportView
+var pause_overlay: PauseOverlay
 
 # All values below are authored directly in the 960x540 logical viewport.
 const VIEW_SIZE := Vector2(960, 540)
@@ -166,6 +182,8 @@ func setup(manager: GameManager, map: ExplorationWorld) -> void:
 	message_until = 0.0
 	_last_prompt = ""
 	_clear_hud()
+	if _ui_factory == null:
+		_ui_factory = UiFactory.new()
 	_configure_pixel_font()
 	hud = Control.new()
 	hud.name = "HUDRoot"
@@ -196,19 +214,14 @@ func _configure_pixel_font() -> void:
 	# Use one imported Fusion Pixel face at a fixed size. Controls stay on the
 	# logical pixel grid, so no secondary text scale or fractional transform is
 	# needed for crisp CJK, Latin, and numeric labels.
-	_pixel_theme = PixelTheme.create_theme()
-	_pixel_theme.default_font = FONT_FUSION
-	_pixel_theme.default_font_size = PixelTheme.FONT_SIZE_BODY
-	var fusion_font := FONT_FUSION as FontFile
-	if fusion_font != null:
-		fusion_font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-		fusion_font.hinting = TextServer.HINTING_NONE
-		fusion_font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	_ui_factory.setup(null)
+	_pixel_theme = _ui_factory.theme
 
 func _clear_hud() -> void:
 	if is_instance_valid(hud):
 		hud.free()
 	hud = null
+	hud_view = null
 	pause_panel = null
 	exit_button = null
 	audio_settings_panel = null
@@ -278,6 +291,12 @@ func _clear_hud() -> void:
 	log_panel = null
 	log_content_label = null
 	log_close_button = null
+	backpack_view = null
+	storage_view = null
+	crafting_view = null
+	build_view = null
+	event_report_view = null
+	pause_overlay = null
 	_resource_icons.clear()
 	_rail_icons.clear()
 
@@ -330,6 +349,142 @@ func _can_craft_pickaxe() -> bool:
 	return bool(game.resources.can_craft_pickaxe())
 
 func _build_hud() -> void:
+	if hud == null:
+		return
+	hud_view = HudView.new()
+	hud_view.setup(hud, _ui_factory)
+	day_label = hud_view.day_label
+	clock_icon_label = hud_view.clock_icon_label
+	clock_label = hud_view.clock_label
+	weather_icon_label = hud_view.weather_icon_label
+	weather_label = hud_view.weather_label
+	temperature_label = hud_view.temperature_label
+	survivor_panel = hud_view.survivor_panel
+	survivor_name_label = hud_view.survivor_name_label
+	survivor_status_label = hud_view.survivor_status_label
+	survivor_avatar_sprite = hud_view.survivor_avatar_sprite
+	objective_panel = hud_view.objective_panel
+	objective_live_label = hud_view.objective_live_label
+	objective_reward_label = hud_view.objective_reward_label
+	objective_log_label = hud_view.objective_log_label
+	prompt_label = hud_view.prompt_label
+	interact_button = hud_view.interact_button
+	feedback_panel = hud_view.feedback_panel
+	message_label = hud_view.message_label
+	interaction_name_label = hud_view.interaction_name_label
+	interaction_progress_bar = hud_view.interaction_progress_bar
+	_resource_badges = hud_view.resource_badges
+	_resource_icons = hud_view.resource_icons
+	_survivor_meter_bars = hud_view.survivor_meter_bars
+	shortcut_button = hud_view.shortcut_button
+	if interact_button != null and not interact_button.pressed.is_connected(_on_interact_pressed):
+		interact_button.pressed.connect(_on_interact_pressed)
+	if shortcut_button != null and not shortcut_button.pressed.is_connected(_toggle_shortcut_panel):
+		shortcut_button.pressed.connect(_toggle_shortcut_panel)
+	if hud_view.objective_log_button != null and not hud_view.objective_log_button.pressed.is_connected(toggle_log_panel):
+		hud_view.objective_log_button.pressed.connect(toggle_log_panel)
+	if hud_view.objective_shortcut_button != null and not hud_view.objective_shortcut_button.pressed.is_connected(_toggle_shortcut_panel):
+		hud_view.objective_shortcut_button.pressed.connect(_toggle_shortcut_panel)
+	_build_tool_selection_panel()
+	_build_pause_panel()
+	_build_audio_settings_panel()
+	_build_backpack_panel()
+	_build_crafting_panel()
+	_build_storage_panel()
+	_build_shortcut_panel()
+	_build_log_panel()
+	_build_event_panel()
+	_build_report_panel()
+	_setup_overlay_views()
+
+func _setup_overlay_views() -> void:
+	if hud == null:
+		return
+	backpack_view = BackpackView.new()
+	backpack_view.setup(hud, _ui_factory, {"legacy_panel": backpack_panel, "close_button": backpack_close_button, "slots": backpack_slots, "action_buttons": {"use": item_action_menu.get_node_or_null("UseButton"), "cook": item_action_menu.get_node_or_null("CookButton"), "discard": item_action_menu.get_node_or_null("DiscardButton"), "confirm_discard": discard_dialog.get_node_or_null("ConfirmDiscardButton"), "cancel_discard": discard_dialog.get_node_or_null("CancelDiscardButton")}})
+	storage_view = StorageView.new()
+	storage_view.setup(hud, _ui_factory, {"legacy_panel": storage_panel, "close_button": storage_close_button, "storage_slots": storage_slots, "backpack_slots": storage_backpack_slots, "drop_validator": Callable(self, "_can_storage_drop")})
+	crafting_view = CraftingView.new()
+	crafting_view.setup(hud, _ui_factory, {"legacy_panel": crafting_panel, "close_button": crafting_panel.get_node_or_null("CraftingCloseButton"), "recipe_buttons": recipe_buttons})
+	build_view = BuildView.new()
+	build_view.setup(hud, _ui_factory, {"legacy_panel": build_selection_panel, "dim": build_selection_dim, "close_button": build_selection_panel.get_node_or_null("BuildSelectionCloseButton"), "tool_buttons": build_tool_buttons, "facility_buttons": facility_buttons, "facility_button": build_selection_panel.get_node_or_null("FacilityBuildButton"), "crafting_button": crafting_open_button})
+	event_report_view = EventReportView.new()
+	event_report_view.setup(hud, _ui_factory, {"legacy_panel": event_panel, "report_panel": report_panel, "title_label": event_title_label, "body_label": event_body_label, "choice_buttons": event_choice_buttons, "report_content_label": report_content_label, "report_continue": report_continue_button})
+	pause_overlay = PauseOverlay.new()
+	pause_overlay.setup(hud, _ui_factory, {"legacy_panel": pause_panel, "dim": pause_dim, "resume_button": pause_panel.get_node_or_null("PauseResumeButton"), "explore_button": pause_panel.get_node_or_null("PauseExploreButton"), "save_button": pause_panel.get_node_or_null("PauseSaveButton"), "load_button": pause_panel.get_node_or_null("PauseLoadButton"), "exit_button": exit_button})
+	for view in [backpack_view, storage_view, crafting_view, build_view, event_report_view, pause_overlay]:
+		if not view.intent_requested.is_connected(dispatch_intent):
+			view.intent_requested.connect(dispatch_intent)
+		if not view.close_requested.is_connected(_on_child_overlay_close):
+			view.close_requested.connect(_on_child_overlay_close)
+
+func _on_child_overlay_close() -> void:
+	if _event_open or _report_open:
+		_event_open = false
+		_report_open = false
+		_close_pause_overlay("event")
+		_close_pause_overlay("report")
+		if event_report_view != null: event_report_view.close()
+	close_overlay()
+
+func dispatch_intent(intent: Dictionary) -> void:
+	var kind := str(intent.get("kind", ""))
+	match kind:
+		"use_item":
+			var item_key := str(intent.get("key", ""))
+			if not item_key.is_empty() and game != null:
+				var result: Dictionary = game.use_item(item_key)
+				_show_message(str(result.get("reason", "物品未使用。")), 2.5)
+				refresh()
+		"storage_move":
+			var transfer_key := str(intent.get("key", ""))
+			if transfer_key.is_empty() or game == null or game.resources == null:
+				return
+			var result: Dictionary = game.resources.move_to_storage(transfer_key, 1) if str(intent.get("source", "")) == "backpack" else game.resources.move_to_backpack(transfer_key, 1)
+			_show_message(str(result.get("reason", "物品未转移。")), 1.5)
+			refresh()
+		"storage_drop":
+			var payload_variant: Variant = intent.get("payload", {})
+			var payload: Dictionary = payload_variant if payload_variant is Dictionary else {}
+			_handle_storage_drop(payload, str(intent.get("target_kind", "")), str(intent.get("target_key", "")))
+		"backpack_context":
+			_open_backpack_item_menu(int(intent.get("index", -1)))
+		"backpack_dismiss_context":
+			if item_action_menu != null: item_action_menu.visible = false
+		"backpack_use_action":
+			_use_backpack_action()
+		"backpack_cook_action":
+			_cook_backpack_action()
+		"backpack_discard_action":
+			_open_discard_dialog_from_action()
+		"backpack_confirm_discard":
+			_confirm_discard_quantity()
+		"backpack_cancel_discard":
+			_close_discard_dialog()
+		"craft_recipe":
+			_craft_recipe(str(intent.get("recipe", "")))
+		"craft_tool":
+			_select_tool_and_craft(str(intent.get("tool", "")))
+		"select_facility":
+			_select_facility_for_build(str(intent.get("building_id", "")))
+		"enter_facility_build":
+			_enter_facility_build_mode()
+		"open_crafting":
+			_open_crafting_panel()
+		"choose_event":
+			_on_event_choice(int(intent.get("index", -1)))
+		"report_continue":
+			_on_report_continue()
+		"save_game":
+			save_game()
+		"load_game":
+			load_game()
+		"exit_game":
+			exit_game()
+		"resume":
+			_on_resume()
+
+func _build_hud_legacy() -> void:
 	if hud == null:
 		return
 	# The map is the primary surface. Permanent information is split into small
@@ -490,6 +645,29 @@ func _build_hud() -> void:
 	_build_log_panel()
 	_build_event_panel()
 	_build_report_panel()
+	_bind_hud_view()
+
+func _bind_hud_view() -> void:
+	if hud == null:
+		return
+	hud_view = HudView.new()
+	hud_view.factory = _ui_factory
+	hud_view.bind_existing(hud, {
+		"day_label": day_label, "clock_icon_label": clock_icon_label,
+		"clock_label": clock_label, "weather_icon_label": weather_icon_label,
+		"weather_label": weather_label, "temperature_label": temperature_label,
+		"survivor_panel": survivor_panel, "survivor_name_label": survivor_name_label,
+		"survivor_status_label": survivor_status_label, "survivor_avatar_sprite": survivor_avatar_sprite,
+		"objective_panel": objective_panel, "objective_live_label": objective_live_label,
+		"objective_reward_label": objective_reward_label, "objective_log_label": objective_log_label,
+		"prompt_panel": prompt_label.get_parent() if prompt_label != null else null,
+		"prompt_label": prompt_label, "interact_button": interact_button,
+		"feedback_panel": feedback_panel, "message_label": message_label,
+		"interaction_panel": interaction_progress_bar.get_parent() if interaction_progress_bar != null else null,
+		"interaction_name_label": interaction_name_label, "interaction_progress_bar": interaction_progress_bar,
+		"resource_badges": _resource_badges, "resource_icons": _resource_icons,
+		"survivor_meter_bars": _survivor_meter_bars,
+	})
 
 func _build_tool_selection_panel() -> void:
 	build_selection_dim = ColorRect.new()
@@ -516,7 +694,6 @@ func _build_tool_selection_panel() -> void:
 			var id := str(definition.get("id", ""))
 			var card := _button_in(build_selection_panel, Vector2(30 + (index % 3) * 174, 226 + (index / 3) * 54), Vector2(164, 48), "")
 			card.name = "FacilityBuildCard_%s" % id
-			card.pressed.connect(_select_facility_for_build.bind(id))
 			var icon := _icon(Vector2(8, 7), Vector2(16, 16), Assets.building_icon(str(definition.get("icon", id))), card)
 			icon.name = "Icon"
 			var name_label := _label_in(card, Vector2(30, 4), Vector2(126, 16), str(definition.get("name", id)), 3, TEXT_ACCENT)
@@ -528,15 +705,12 @@ func _build_tool_selection_panel() -> void:
 	var facility_button := _button_in(build_selection_panel, Vector2(30, 400), Vector2(210, 32), "进入设施建造")
 	facility_button.name = "FacilityBuildButton"
 	facility_button.tooltip_text = "选择并放置营地设施"
-	facility_button.pressed.connect(_enter_facility_build_mode)
 	crafting_open_button = _button_in(build_selection_panel, Vector2(252, 400), Vector2(150, 32), "用品制作")
 	crafting_open_button.name = "CraftingOpenButton"
 	crafting_open_button.tooltip_text = "制作绷带、火把或陷阱"
-	crafting_open_button.pressed.connect(_open_crafting_panel)
 	var close := _button_in(build_selection_panel, Vector2(414, 400), Vector2(150, 32), "关闭")
 	close.name = "BuildSelectionCloseButton"
 	close.tooltip_text = "关闭建造选择"
-	close.pressed.connect(_close_build_selection)
 	build_selection_dim.visible = false
 	build_selection_panel.visible = false
 
@@ -549,7 +723,6 @@ func _build_crafting_panel() -> void:
 	crafting_hint = _label_in(crafting_panel, Vector2(24, 48), Vector2(438, 21), "需要简易工作台", 5, TEXT_MUTED)
 	var close := _button_in(crafting_panel, Vector2(372, 16), Vector2(90, 30), "关闭")
 	close.name = "CraftingCloseButton"
-	close.pressed.connect(close_crafting_panel)
 	for index in range(["bandage", "torch", "trap"].size()):
 		var recipe_id: String = ["bandage", "torch", "trap"][index]
 		var row := _panel(Vector2(24, 81 + index * 78), Vector2(438, 63), PANEL_LIGHT, crafting_panel)
@@ -560,7 +733,6 @@ func _build_crafting_panel() -> void:
 		var cost_label := _label_in(row, Vector2(58, 34), Vector2(220, 18), "", 4, TEXT_MUTED)
 		var craft_button := _button_in(row, Vector2(316, 15), Vector2(108, 33), "制作")
 		craft_button.name = "CraftButton"
-		craft_button.pressed.connect(_craft_recipe.bind(recipe_id))
 		recipe_buttons[recipe_id] = craft_button
 		crafting_rows[recipe_id] = {"name":name_label, "cost":cost_label, "button":craft_button}
 	crafting_panel.visible = false
@@ -569,7 +741,6 @@ func _build_tool_card(tool_id: String, label_text: String, icon_texture: Texture
 	var card := _button_in(build_selection_panel, pos, Vector2(210, 138), "")
 	card.name = "BuildToolButton_%s" % tool_id
 	card.tooltip_text = "制作%s" % label_text
-	card.pressed.connect(_select_tool_and_craft.bind(tool_id))
 	var icon := _icon(Vector2(97, 10), Vector2(16, 16), icon_texture, card)
 	icon.name = "Icon"
 	var name_label := _label_in(card, Vector2(12, 38), Vector2(186, 20), label_text, 6, TEXT_ACCENT)
@@ -645,6 +816,7 @@ func _open_build_selection() -> void:
 		world.build_mode.active = false
 	_build_selection_open = true
 	_open_pause_overlay("build_selection")
+	if build_view != null: build_view.open({})
 	_refresh_build_selection()
 	refresh()
 
@@ -653,6 +825,7 @@ func _close_build_selection() -> void:
 		return
 	_build_selection_open = false
 	_close_pause_overlay("build_selection")
+	if build_view != null: build_view.close()
 	refresh()
 
 func _select_tool_and_craft(tool_id: String) -> void:
@@ -697,20 +870,19 @@ func _build_pause_panel() -> void:
 	var hint := _label_in(pause_panel, Vector2(27, 60), Vector2(372, 27), "进度已冻结", 6, TEXT_MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var resume := _button_in(pause_panel, Vector2(33, 102), Vector2(360, 42), "继续游戏")
-	resume.pressed.connect(_on_resume)
+	resume.name = "PauseResumeButton"
 	var save := _button_in(pause_panel, Vector2(33, 153), Vector2(174, 42), "保存")
-	save.pressed.connect(save_game)
+	save.name = "PauseSaveButton"
 	var load := _button_in(pause_panel, Vector2(219, 153), Vector2(174, 42), "读取")
-	load.pressed.connect(load_game)
+	load.name = "PauseLoadButton"
 	var build := _button_in(pause_panel, Vector2(33, 207), Vector2(174, 42), "返回探索")
-	build.pressed.connect(_on_resume)
+	build.name = "PauseExploreButton"
 	var settings := _button_in(pause_panel, Vector2(219, 207), Vector2(174, 42), "设置")
 	settings.name = "AudioSettingsButton"
 	settings.tooltip_text = "调整游戏声音设置"
 	settings.pressed.connect(_open_audio_settings)
 	exit_button = _button_in(pause_panel, Vector2(33, 261), Vector2(360, 42), "退出游戏")
 	exit_button.tooltip_text = "退出游戏"
-	exit_button.pressed.connect(exit_game)
 	var close := _label_in(pause_panel, Vector2(27, 324), Vector2(372, 27), "Esc 关闭 · F5 保存 · F9 读取", 5, TEXT_MUTED)
 	close.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	pause_dim.visible = false
@@ -753,7 +925,6 @@ func _build_backpack_panel() -> void:
 	backpack_panel.z_index = 20
 	_label_in(backpack_panel, Vector2(30, 21), Vector2(390, 33), "背包", 10, TEXT_ACCENT)
 	backpack_close_button = _button_in(backpack_panel, Vector2(489, 18), Vector2(102, 36), "关闭")
-	backpack_close_button.pressed.connect(close_backpack)
 	backpack_content_label = _label_in(backpack_panel, Vector2(30, 57), Vector2(552, 24), "", 6, TEXT_MUTED)
 	backpack_content_label.clip_text = true
 	for index in range(ResourceManager.BACKPACK_BASE_CAPACITY):
@@ -761,7 +932,6 @@ func _build_backpack_panel() -> void:
 		var row := index / 4
 		var cell := _panel(Vector2(30 + column * 144, 90 + row * 78), Vector2(132, 66), PANEL_LIGHT, backpack_panel)
 		cell.mouse_filter = Control.MOUSE_FILTER_STOP
-		cell.gui_input.connect(_on_backpack_cell_gui_input.bind(index))
 		var item_icon := _icon(Vector2(50, 6), Vector2(32, 32), ICON_CHEST, cell)
 		item_icon.visible = false
 		var item_label := _label_in(cell, Vector2(9, 42), Vector2(80, 18), "空", 5, TEXT_MAIN)
@@ -783,13 +953,10 @@ func _build_backpack_action_menu() -> void:
 	item_action_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var use_button := _button_in(item_action_menu, Vector2(15, 31), Vector2(144, 27), "食用")
 	use_button.name = "UseButton"
-	use_button.pressed.connect(_use_backpack_action)
 	var cook_button := _button_in(item_action_menu, Vector2(15, 61), Vector2(144, 27), "烤熟")
 	cook_button.name = "CookButton"
-	cook_button.pressed.connect(_cook_backpack_action)
 	var discard_button := _button_in(item_action_menu, Vector2(15, 91), Vector2(144, 27), "丢弃")
 	discard_button.name = "DiscardButton"
-	discard_button.pressed.connect(_open_discard_dialog_from_action)
 	item_action_menu.visible = false
 
 func _build_discard_dialog() -> void:
@@ -812,10 +979,8 @@ func _build_discard_dialog() -> void:
 	discard_dialog.add_child(discard_quantity_spinbox)
 	var confirm := _button_in(discard_dialog, Vector2(30, 148), Vector2(126, 33), "确认丢弃")
 	confirm.name = "ConfirmDiscardButton"
-	confirm.pressed.connect(_confirm_discard_quantity)
 	var cancel := _button_in(discard_dialog, Vector2(180, 148), Vector2(126, 33), "取消")
 	cancel.name = "CancelDiscardButton"
-	cancel.pressed.connect(_close_discard_dialog)
 	discard_dialog.visible = false
 
 func _build_storage_panel() -> void:
@@ -829,7 +994,6 @@ func _build_storage_panel() -> void:
 	_label_in(storage_panel, Vector2(24, 18), Vector2(520, 33), "储物架", 10, TEXT_ACCENT)
 	storage_capacity_label = _label_in(storage_panel, Vector2(24, 48), Vector2(720, 24), "", 6, TEXT_MUTED)
 	storage_close_button = _button_in(storage_panel, Vector2(792, 18), Vector2(96, 33), "关闭")
-	storage_close_button.pressed.connect(close_storage)
 	storage_grid_panel = _panel(Vector2(18, 84), Vector2(414, 372), PANEL_LIGHT, storage_panel)
 	storage_grid_panel.name = "StorageGrid"
 	storage_grid_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -949,7 +1113,6 @@ func _build_event_panel() -> void:
 	for index in range(2):
 		var choice := _button_in(event_panel, Vector2(42, 166 + index * 72), Vector2(522, 54), "")
 		choice.name = "EventChoice%d" % index
-		choice.pressed.connect(_on_event_choice.bind(index))
 		event_choice_buttons.append(choice)
 	event_panel.visible = false
 
@@ -960,11 +1123,11 @@ func _build_report_panel() -> void:
 	report_panel.z_index = 36
 	_label_in(report_panel, Vector2(30, 24), Vector2(546, 30), "夜间报告", 9, TEXT_ACCENT).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	report_content_label = _label_in(report_panel, Vector2(42, 72), Vector2(522, 210), "", 5, TEXT_MAIN)
+	report_content_label.name = "ReportContent"
 	report_content_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	report_content_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	report_content_label.clip_text = true
 	report_continue_button = _button_in(report_panel, Vector2(177, 294), Vector2(252, 36), "进入清晨")
-	report_continue_button.pressed.connect(_on_report_continue)
 	report_panel.visible = false
 
 func _open_pause_overlay(kind: String) -> void:
@@ -1025,21 +1188,27 @@ func show_event(event: Dictionary) -> void:
 	_close_pause_overlay("report")
 	_open_pause_overlay("event")
 	var data: Dictionary = event.get("data", {}) if event.get("data", {}) is Dictionary else {}
-	event_title_label.text = str(data.get("title", "夜间事件"))
-	event_body_label.text = str(data.get("text", "夜里发生了一些事情。"))
+	var title := str(data.get("title", "夜间事件"))
+	var body := str(data.get("text", "夜里发生了一些事情。"))
 	var choices: Array = data.get("choices", [])
+	var choice_text: Array[String] = []
+	var choice_enabled: Array[bool] = []
 	for index in range(event_choice_buttons.size()):
-		var button: Button = event_choice_buttons[index]
 		if index >= choices.size():
-			button.visible = false
+			choice_text.append("")
+			choice_enabled.append(false)
 			continue
 		var choice: Dictionary = choices[index] if choices[index] is Dictionary else {}
 		var cost: Dictionary = choice.get("cost", {}) if choice.get("cost", {}) is Dictionary else {}
-		button.visible = true
-		button.text = "%s\n%s" % [str(choice.get("label", "选择")), _cost_text(cost) if not cost.is_empty() else "不消耗资源"]
-		button.disabled = not game.resources.can_afford(cost)
-	event_panel.visible = true
-	report_panel.visible = false
+		choice_text.append("%s\n%s" % [str(choice.get("label", "选择")), _cost_text(cost) if not cost.is_empty() else "不消耗资源"])
+		choice_enabled.append(game.resources.can_afford(cost))
+	if event_report_view != null:
+		event_report_view.open({"mode":"event", "title":title, "body":body, "choices":choice_text, "choice_enabled":choice_enabled})
+	else:
+		event_title_label.text = title
+		event_body_label.text = body
+		event_panel.visible = true
+		report_panel.visible = false
 
 func show_report(lines: Array[String], terminal: bool = false) -> void:
 	if report_panel == null:
@@ -1048,11 +1217,16 @@ func show_report(lines: Array[String], terminal: bool = false) -> void:
 	_event_open = false
 	_close_pause_overlay("event")
 	_open_pause_overlay("report")
-	report_content_label.text = "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
-	report_continue_button.text = "结束游戏" if terminal else "进入清晨"
-	report_continue_button.disabled = terminal
-	report_panel.visible = true
-	event_panel.visible = false
+	var content := "\n".join(lines) if not lines.is_empty() else "这一天平安过去了。"
+	var continue_text := "结束游戏" if terminal else "进入清晨"
+	if event_report_view != null:
+		event_report_view.open({"mode":"report", "content":content, "continue_text":continue_text, "terminal":terminal})
+	else:
+		report_content_label.text = content
+		report_continue_button.text = continue_text
+		report_continue_button.disabled = terminal
+		report_panel.visible = true
+		event_panel.visible = false
 
 func toggle_log_panel() -> void:
 	if _event_open or _report_open:
@@ -1079,12 +1253,15 @@ func _close_standard_overlays() -> void:
 		_close_audio_settings()
 	if _backpack_open:
 		_backpack_open = false
+		if backpack_view != null: backpack_view.close()
 		_close_pause_overlay("backpack")
 	if _storage_open:
 		_storage_open = false
+		if storage_view != null: storage_view.close()
 		_close_pause_overlay("storage")
 	if _crafting_open:
 		_crafting_open = false
+		if crafting_view != null: crafting_view.close()
 		_close_pause_overlay("crafting")
 	if _shortcut_open:
 		_shortcut_open = false
@@ -1096,55 +1273,16 @@ func _close_standard_overlays() -> void:
 func refresh() -> void:
 	if game == null:
 		return
-	var resources = game.resources
 	var hero: Survivor = game.get_protagonist() if game.has_method("get_protagonist") else null
 	var current_time := Time.get_ticks_msec() / 1000.0
-
-	if resources != null:
-		for index in range(mini(_resource_badges.size(), RESOURCE_KEYS.size())):
-			var badge: Label = _resource_badges[index]
-			var key := str(RESOURCE_KEYS[index])
-			var amount := _resource_amount(resources, key)
-			# The capacity stays in the tooltip; a single compact quantity keeps
-			# every 16px icon slot readable at the native HUD scale.
-			badge.text = str(amount)
-			var tooltip := "%s：%d / %d" % [resources.display_name(key), amount, _resource_capacity(resources, key)]
-			badge.tooltip_text = tooltip
-			_resource_icons[index].tooltip_text = tooltip
-	if day_label != null:
-		day_label.text = "第%d天" % int(game.day)
-	if clock_label != null:
-		clock_label.text = _clock_text()
-	if weather_label != null:
-		weather_label.text = _weather_text(str(game.weather))
-	if temperature_label != null:
-		var temperature_status: Dictionary = game.get_temperature_status() if game.has_method("get_temperature_status") else {}
-		temperature_label.text = "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))]
-		temperature_label.tooltip_text = "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0))
-	if hero != null:
-		var health := _stat_value(hero, "health")
-		var hunger := _stat_value(hero, "hunger")
-		var energy := _stat_value(hero, "energy")
-		var morale := _stat_value(hero, "morale")
-		_update_survivor_card(hero)
-	else:
-		_update_survivor_card(null)
-
-	_update_target(hero)
-	_update_log()
 	_refresh_phase_overlay()
 	_update_buttons()
 	_refresh_backpack_panel()
 	_refresh_crafting_panel()
 	_refresh_storage_panel()
-	if pause_panel != null:
-		pause_panel.visible = paused_by_menu
-	if pause_dim != null:
-		pause_dim.visible = paused_by_menu
 	if message_label != null and message_until > 0.0 and message_until <= current_time:
 		message_label.text = ""
 		message_until = 0.0
-		_update_log()
 
 	# Keep context prompt and progress state coherent when a save/load operation
 	# restores a world while the HUD is already visible.
@@ -1162,6 +1300,60 @@ func refresh() -> void:
 	elif _last_prompt != "" and prompt_label != null:
 		prompt_label.text = _last_prompt
 		_set_prompt_visible(true)
+	if hud_view != null:
+		hud_view.refresh(_build_ui_snapshot().duplicate(true))
+
+func _build_ui_snapshot() -> Dictionary:
+	var resources_snapshot: Dictionary = {}
+	if game != null and game.resources != null:
+		for key in RESOURCE_KEYS:
+			resources_snapshot[key] = {
+				"amount": _resource_amount(game.resources, key),
+				"capacity": _resource_capacity(game.resources, key),
+				"name": game.resources.display_name(key) if game.resources.has_method("display_name") else key,
+			}
+	var hero: Survivor = game.get_protagonist() if game != null and game.has_method("get_protagonist") else null
+	var survivor_snapshot := {
+		"name": str(hero.display_name) if hero != null else "无人",
+		"status": ("Lv.%d %s" % [int(hero.skill_value("build")) if hero.has_method("skill_value") else 1, hero.status_text() if hero.has_method("status_text") else "正常"]) if hero != null else "离队",
+	}
+	for key in ["health", "hunger", "energy", "morale"]:
+		survivor_snapshot[key] = _stat_value(hero, key)
+	var temperature_status: Dictionary = game.get_temperature_status() if game != null and game.has_method("get_temperature_status") else {}
+	return {
+		"day": "第%d天" % int(game.day) if game != null else "",
+		"clock": _clock_text(),
+		"weather": _weather_text(str(game.weather)) if game != null else "",
+		"temperature": {"text": "环%.0f° 身%.1f°" % [float(temperature_status.get("environment", 0.0)), float(temperature_status.get("body", 0.0))], "tooltip": "环境温度与主角身体温度；低于 %.0f° 会持续损失生命" % float(temperature_status.get("threshold", 35.0)), "environment": temperature_status.get("environment", 0.0), "body": temperature_status.get("body", 0.0)},
+		"resources": resources_snapshot,
+		"survivor": survivor_snapshot,
+		"objective": _build_objective_snapshot(hero),
+		"log": game.daily_log.duplicate(true) if game != null and game.daily_log is Array else [],
+		"interaction": {"prompt": prompt_label.text if prompt_label != null else "", "prompt_visible": prompt_label != null and prompt_label.get_parent().visible, "name": interaction_name_label.text if interaction_name_label != null else "", "progress": interaction_progress_bar.value if interaction_progress_bar != null else 0.0},
+	}
+
+func _build_objective_snapshot(hero: Survivor) -> Dictionary:
+	var goal_text := _director_goal_text()
+	var text := goal_text if not goal_text.is_empty() else "探索荒野，带回物资"
+	if _build_selection_open:
+		text = "选择工具或设施"
+	elif world != null and world.build_mode != null and world.build_mode.active:
+		text = "放置设施 · E 确认"
+	elif world != null and world.nearest != null:
+		var point = world.nearest
+		text = str(point.display_name)
+		if point.cooldown_remaining > 0.0:
+			text += " · 冷却 %.0fs" % point.cooldown_remaining
+		if not goal_text.is_empty(): text += "\n" + goal_text
+	elif bool(game.in_house):
+		text = "屋内休整 · 找到床铺"
+	elif _is_paused():
+		text = "游戏暂停 · 选择操作"
+	if hero != null and not hero.alive:
+		text = "阿禾已倒下 · 尽快结束今天"
+	var parts := text.split("\n")
+	var reward := _goal_reward_text()
+	return {"live": _ellipsize(str(parts[0]) if not parts.is_empty() else "", 10), "reward": _ellipsize(reward if not reward.is_empty() else (str(parts[1]) if parts.size() > 1 else "准备出发"), 12)}
 
 func _update_buttons() -> void:
 	var inside := bool(game.in_house) if game != null else false
@@ -1169,14 +1361,12 @@ func _update_buttons() -> void:
 	var overlay_open := _backpack_open or _storage_open or _crafting_open or _shortcut_open or _log_open or _build_selection_open or _event_open or _report_open or _audio_settings_open
 	if backpack_button != null:
 		backpack_button.visible = not overlay_open
-	if backpack_panel != null:
-		# The standalone backpack view is replaced by the right-hand transfer grid
-		# while a storage device is open.
-		backpack_panel.visible = _backpack_open and not _storage_open
-	if storage_panel != null:
-		storage_panel.visible = _storage_open
-	if crafting_panel != null:
-		crafting_panel.visible = _crafting_open
+	if backpack_view != null: backpack_view.refresh({})
+	if storage_view != null: storage_view.refresh({})
+	if crafting_view != null: crafting_view.refresh({})
+	if build_view != null: build_view.refresh({})
+	if pause_overlay != null: pause_overlay.refresh({})
+	if event_report_view != null and not (_event_open or _report_open): event_report_view.close()
 	if build_button != null:
 		build_button.disabled = inside or world == null or world.build_mode == null
 		build_button.text = ""
@@ -1198,10 +1388,6 @@ func _update_buttons() -> void:
 		pause_button.text = "▶" if paused else "Ⅱ"
 		pause_button.disabled = str(game.phase) == "ended"
 		pause_button.visible = not overlay_open
-	if build_selection_panel != null:
-		build_selection_panel.visible = _build_selection_open
-	if build_selection_dim != null:
-		build_selection_dim.visible = _build_selection_open
 	_refresh_build_selection()
 	if shortcut_button != null:
 		shortcut_button.visible = not overlay_open
@@ -1213,10 +1399,6 @@ func _update_buttons() -> void:
 		log_panel.visible = _log_open
 	if log_content_label != null and _log_open:
 		_refresh_log_panel()
-	if event_panel != null:
-		event_panel.visible = _event_open
-	if report_panel != null:
-		report_panel.visible = _report_open
 	if audio_settings_panel != null:
 		audio_settings_panel.visible = _audio_settings_open
 	if sfx_toggle != null:
@@ -1242,9 +1424,11 @@ func _refresh_phase_overlay() -> void:
 			if _event_open:
 				_event_open = false
 				_close_pause_overlay("event")
+				if event_report_view != null: event_report_view.close()
 			if _report_open:
 				_report_open = false
 				_close_pause_overlay("report")
+				if event_report_view != null: event_report_view.close()
 
 func toggle_backpack() -> void:
 	if _event_open or _report_open:
@@ -1257,27 +1441,33 @@ func toggle_backpack() -> void:
 	_close_standard_overlays()
 	_backpack_open = true
 	_open_pause_overlay("backpack")
+	if backpack_view != null: backpack_view.open({})
 	refresh()
 
 func close_backpack() -> void:
 	_backpack_open = false
 	_close_backpack_context_menus()
+	if backpack_view != null: backpack_view.close()
 	_close_pause_overlay("backpack")
 	refresh()
 
 func close_storage() -> void:
 	_storage_open = false
 	_close_pause_overlay("storage")
+	if storage_view != null: storage_view.close()
 	refresh()
 
 func close_overlay() -> bool:
 	if _event_open or _report_open:
 		return true
-	if _build_selection_open:
-		_close_build_selection()
-		return true
 	if _audio_settings_open:
 		_close_audio_settings()
+		return true
+	if paused_by_menu:
+		_on_resume()
+		return true
+	if _build_selection_open:
+		_close_build_selection()
 		return true
 	if _log_open:
 		close_log_panel()
@@ -1302,6 +1492,7 @@ func _on_storage_open_requested() -> void:
 	_close_standard_overlays()
 	_storage_open = true
 	_open_pause_overlay("storage")
+	if storage_view != null: storage_view.open({})
 	refresh()
 
 func _sfx_enabled() -> bool:
@@ -1396,6 +1587,7 @@ func _refresh_crafting_panel() -> void:
 func _refresh_storage_panel() -> void:
 	if storage_panel == null or game == null or game.resources == null:
 		return
+	storage_panel.visible = _storage_open
 	var resources = game.resources
 	var carried := int(resources.carried_count()) if resources.has_method("carried_count") else 0
 	var capacity := int(resources.backpack_capacity)
@@ -1427,7 +1619,8 @@ func _refresh_storage_transfer_slot(slot, kind: String, key: String, amount: int
 	if slot == null:
 		return
 	var visible_key := key if amount > 0 else ""
-	slot.configure(kind, visible_key, amount, unlocked, self)
+	var transfer_owner: Object = storage_view if storage_view != null else self
+	slot.configure(kind, visible_key, amount, unlocked, transfer_owner)
 	if slot.item_label != null:
 		slot.item_label.text = game.resources.display_name(visible_key) if amount > 0 else ("空" if unlocked else "锁定")
 		slot.item_label.add_theme_color_override("font_color", TEXT_MAIN if unlocked else TEXT_MUTED)
@@ -1480,11 +1673,13 @@ func _open_crafting_panel() -> void:
 	_close_standard_overlays()
 	_crafting_open = true
 	_open_pause_overlay("crafting")
+	if crafting_view != null: crafting_view.open({})
 	refresh()
 
 func close_crafting_panel() -> void:
 	_crafting_open = false
 	_close_pause_overlay("crafting")
+	if crafting_view != null: crafting_view.close()
 	refresh()
 
 func _storage_take(key: String) -> void:
@@ -1627,9 +1822,15 @@ func toggle_pause_menu() -> void:
 	paused_by_menu = not paused_by_menu
 	if game.audio != null and game.audio.has_method("push_snapshot") and game.audio.has_method("pop_snapshot"):
 		if paused_by_menu:
+			if pause_overlay != null: pause_overlay.open({})
 			game.audio.push_snapshot("pause")
 		else:
+			if pause_overlay != null: pause_overlay.close()
 			game.audio.pop_snapshot("pause")
+	elif paused_by_menu:
+		if pause_overlay != null: pause_overlay.open({})
+	else:
+		if pause_overlay != null: pause_overlay.close()
 	game.time.paused = paused_by_menu or _overlay_pause_depth > 0
 	refresh()
 
@@ -1638,6 +1839,7 @@ func _on_resume() -> void:
 		paused_by_menu = false
 		return
 	paused_by_menu = false
+	if pause_overlay != null: pause_overlay.close()
 	if game.audio != null and game.audio.has_method("pop_snapshot"):
 		game.audio.pop_snapshot("pause")
 	game.time.paused = _overlay_pause_depth > 0
@@ -1669,6 +1871,7 @@ func load_game() -> void:
 		game.audio.emit_event("ui.load_complete")
 	_show_message("存档已读取" if ok else "没有找到存档", 3.0)
 	paused_by_menu = false
+	if pause_overlay != null: pause_overlay.close()
 	if game.time != null:
 		game.time.paused = false
 	if game.audio != null and game.audio.has_method("pop_snapshot"):
@@ -1716,14 +1919,13 @@ func toggle_build_mode() -> void:
 func _on_backpack_cell_gui_input(event: InputEvent, index: int) -> void:
 	if not event is InputEventMouseButton:
 		return
-	var mouse_event: InputEventMouseButton = event
+	var mouse_event := event as InputEventMouseButton
 	if not mouse_event.pressed:
 		return
-	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-		_open_backpack_item_menu(index)
+	var kind := "backpack_context" if mouse_event.button_index == MOUSE_BUTTON_RIGHT else "backpack_dismiss_context"
+	dispatch_intent({"kind":kind, "index":index})
+	if get_viewport() != null:
 		get_viewport().set_input_as_handled()
-	elif mouse_event.button_index == MOUSE_BUTTON_LEFT and item_action_menu != null:
-		item_action_menu.visible = false
 
 func _open_backpack_item_menu(index: int) -> void:
 	if backpack_panel == null or index < 0 or index >= backpack_slots.size():
@@ -1989,102 +2191,30 @@ func _compact_cost_text(cost: Dictionary) -> String:
 	return " ".join(parts)
 
 func _progress_bar(pos: Vector2, dimensions: Vector2, parent: Control, fill_color: Color = Color("70a9a0")) -> ProgressBar:
-	var bar := ProgressBar.new()
-	bar.position = pos
-	bar.size = dimensions
-	bar.custom_minimum_size = Vector2.ZERO
-	bar.min_value = 0.0
-	bar.max_value = 100.0
-	bar.value = 0.0
-	bar.show_percentage = false
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var background := _bar_style(Color("101b1d", 0.94), PixelTheme.BAR_TEXTURE)
-	var fill := _bar_style(Color.WHITE, PixelTheme.meter_texture(fill_color))
-	bar.add_theme_stylebox_override("background", background)
-	bar.add_theme_stylebox_override("fill", fill)
-	parent.add_child(bar)
-	return bar
+	return _ui_factory.progress_bar(parent, pos, dimensions, fill_color)
 
 func _set_progress_fill(bar: ProgressBar, color: Color) -> void:
-	var fill := _bar_style(Color.WHITE, PixelTheme.meter_texture(color))
-	bar.add_theme_stylebox_override("fill", fill)
+	_ui_factory.set_progress_fill(bar, color)
 
 func _bar_style(tint: Color, texture: Texture2D) -> StyleBoxTexture:
-	return PixelTheme.bar_style(tint, texture)
+	return _ui_factory.bar_style(tint, texture)
 
 func _icon(pos: Vector2, dimensions: Vector2, texture: Texture2D, parent: Control = null) -> TextureRect:
-	var icon := TextureRect.new()
-	icon.position = pos
-	icon.size = dimensions
-	icon.scale = Vector2.ONE
-	icon.texture = texture
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var target_parent: Control = parent if parent != null else hud
-	if target_parent != null:
-		target_parent.add_child(icon)
-	return icon
+	return _ui_factory.icon(target_parent, pos, dimensions, texture)
 
 func _add_button_icon(button: Button, texture: Texture2D) -> TextureRect:
-	# Icons stay at an integer 16px destination inside every button.
-	var icon_size := 16
-	var icon := TextureRect.new()
-	icon.position = Vector2(floor((button.size.x - icon_size) * 0.5), 6)
-	icon.size = Vector2(icon_size, icon_size)
-	icon.texture = texture
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button.add_child(icon)
-	return icon
+	return _ui_factory.add_button_icon(button, texture)
 
 func _label(pos: Vector2, dimensions: Vector2, text: String, font_size: int, color: Color, parent: Control = null) -> Label:
-	var label := Label.new()
-	label.position = pos
-	label.size = dimensions
-	label.scale = Vector2.ONE
-	label.text = text
-	var resolved_font_size := PixelTheme.FONT_SIZE_BODY
-	if font_size >= 9:
-		resolved_font_size = PixelTheme.FONT_SIZE_TITLE
-	elif font_size <= 3:
-		resolved_font_size = PixelTheme.FONT_SIZE_SMALL
-	label.add_theme_font_size_override("font_size", resolved_font_size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color("081516", 0.86))
-	label.add_theme_constant_override("outline_size", 2)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var target_parent: Control = parent if parent != null else hud
-	if target_parent != null:
-		target_parent.add_child(label)
-	return label
+	return _ui_factory.label(target_parent, pos, dimensions, text, font_size, color)
 
 func _label_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String, font_size: int, color: Color) -> Label:
 	return _label(pos, dimensions, text, font_size, color, parent)
 
 func _button(pos: Vector2, dimensions: Vector2, text: String, parent: Control) -> Button:
-	var button := Button.new()
-	button.position = pos
-	button.size = dimensions
-	button.scale = Vector2.ONE
-	button.text = text
-	button.add_theme_font_size_override("font_size", PixelTheme.FONT_SIZE_BODY)
-	button.add_theme_color_override("font_color", TEXT_MAIN)
-	button.add_theme_color_override("font_hover_color", Color.WHITE)
-	button.add_theme_color_override("font_disabled_color", Color("687a76"))
-	button.add_theme_color_override("font_outline_color", Color("081516", 0.92))
-	button.add_theme_constant_override("outline_size", 2)
-	button.add_theme_stylebox_override("normal", _button_style(Color("1c3032"), UI_PANEL_TEXTURE))
-	button.add_theme_stylebox_override("hover", _button_style(Color("2c4a49"), UI_PANEL_LIGHT_TEXTURE))
-	button.add_theme_stylebox_override("pressed", _button_style(Color("152527"), UI_PANEL_PRESSED_TEXTURE))
-	button.add_theme_stylebox_override("disabled", _button_style(Color("182325", 0.8), UI_DISABLED_TEXTURE))
-	button.add_theme_stylebox_override("focus", _button_style(Color("3a534d"), UI_PANEL_LIGHT_TEXTURE))
-	button.focus_mode = Control.FOCUS_ALL
-	parent.add_child(button)
-	return button
+	return _ui_factory.button(parent, pos, dimensions, text)
 
 func _button_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String) -> Button:
 	var button := _button(pos, dimensions, text, parent)
@@ -2092,16 +2222,8 @@ func _button_in(parent: Control, pos: Vector2, dimensions: Vector2, text: String
 	return button
 
 func _button_style(tint: Color, texture: Texture2D = UI_PANEL_TEXTURE) -> StyleBoxTexture:
-	return PixelTheme.button_style(tint, texture)
+	return _ui_factory.button_style(tint, texture)
 
 func _panel(pos: Vector2, dimensions: Vector2, color: Color, parent: Control = null) -> Panel:
-	var panel := Panel.new()
-	panel.position = pos
-	panel.size = dimensions
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var texture := UI_PANEL_LIGHT_TEXTURE if color == PANEL_LIGHT else UI_PANEL_TEXTURE
-	var style := PixelTheme.panel_style(color, texture)
-	panel.add_theme_stylebox_override("panel", style)
-	(parent if parent != null else hud).add_child(panel)
-	return panel
-
+	var target_parent: Control = parent if parent != null else hud
+	return _ui_factory.panel(target_parent, pos, dimensions, color)

@@ -43,13 +43,51 @@ const SOURCE_RULES := {
 	"wood": ["field_branch", "branch", "forest_berries", "forest_tree"]
 }
 
-var amounts: Dictionary = {"food":12, "wood":10, "medicine":3, "stone":4, "fiber":5, "cloth":2, "metal":2, "water":0, "cooked_food":0, "bandage":0, "torch":0, "trap":0, "fish_carp":0, "fish_bass":0, "fish_trout":0, "fish_eel":0, "cooked_fish_carp":0, "cooked_fish_bass":0, "cooked_fish_trout":0, "cooked_fish_eel":0}
-var capacities: Dictionary = {"food":30, "wood":35, "medicine":15, "stone":20, "fiber":25, "cloth":15, "metal":15, "water":30, "cooked_food":30, "bandage":30, "torch":30, "trap":30, "fish_carp":30, "fish_bass":30, "fish_trout":30, "fish_eel":30, "cooked_fish_carp":30, "cooked_fish_bass":30, "cooked_fish_trout":30, "cooked_fish_eel":30}
-var total_collected: int = 0
-var tools: Dictionary = {"axe": false, "pickaxe": false}
-var backpack: Dictionary = {}
-var storage: Dictionary = {}
-var backpack_capacity := BACKPACK_BASE_CAPACITY
+## Domain services are exposed for newer callers while the dictionaries below
+## remain live aliases for the legacy ResourceManager API.
+var catalog: ResourceCatalog
+var ledger: ResourceLedger
+var inventory_state: InventoryState
+var _amounts_alias: Dictionary = {}
+var _capacities_alias: Dictionary = {}
+var _backpack_alias: Dictionary = {}
+var _storage_alias: Dictionary = {}
+var amounts: Dictionary:
+	get:
+		return ledger.amounts if ledger != null else _amounts_alias
+	set(value):
+		_amounts_alias = value
+		if ledger != null: ledger.amounts = value
+var capacities: Dictionary:
+	get:
+		return ledger.capacities if ledger != null else _capacities_alias
+	set(value):
+		_capacities_alias = value
+		if ledger != null: ledger.capacities = value
+var total_collected: int:
+	get:
+		return ledger.total_collected if ledger != null else 0
+	set(value):
+		if ledger != null: ledger.total_collected = value
+var tool_state: Dictionary = {"axe": false, "pickaxe": false}
+var tools: Dictionary
+var backpack: Dictionary:
+	get:
+		return inventory_state.backpack if inventory_state != null else _backpack_alias
+	set(value):
+		_backpack_alias = value
+		if inventory_state != null: inventory_state.backpack = value
+var storage: Dictionary:
+	get:
+		return inventory_state.storage if inventory_state != null else _storage_alias
+	set(value):
+		_storage_alias = value
+		if inventory_state != null: inventory_state.storage = value
+var backpack_capacity: int:
+	get:
+		return inventory_state.backpack_capacity if inventory_state != null else BACKPACK_BASE_CAPACITY
+	set(value):
+		if inventory_state != null: inventory_state.backpack_capacity = value
 ## Standalone ResourceManager callers remain backwards compatible. GameManager
 ## explicitly disables this until its canonical workbench is completed.
 var workbench_available := true
@@ -74,18 +112,25 @@ var pickaxe: bool:
 var unlocked_tools: Array[String] = ["axe", "pickaxe"]
 
 func _init() -> void:
+	catalog = ResourceCatalog.new()
+	inventory_state = InventoryState.new(catalog)
+	ledger = ResourceLedger.new(catalog, inventory_state)
+	_bind_state_aliases()
 	for key in ITEM_KEYS:
-		backpack[key] = 0
 		storage[key] = int(amounts.get(key, 0)) if key in RESOURCE_KEYS else 0
 
+func _bind_state_aliases() -> void:
+	amounts = ledger.amounts
+	capacities = ledger.capacities
+	backpack = inventory_state.backpack
+	storage = inventory_state.storage
+	tools = tool_state
+
 func get_amount(key: String) -> int:
-	return int(amounts.get(key, 0))
+	return ledger.get_amount(key)
 
 func can_afford(cost: Dictionary) -> bool:
-	for key in cost:
-		if get_amount(str(key)) < int(cost[key]):
-			return false
-	return true
+	return ledger.can_afford(cost)
 
 func missing_cost_text(cost: Dictionary) -> String:
 	var missing: Array[String] = []
@@ -95,16 +140,7 @@ func missing_cost_text(cost: Dictionary) -> String:
 	return "资源不足：" + " ".join(missing)
 
 func add(key: String, delta: int) -> int:
-	if not amounts.has(key): return 0
-	if delta < 0:
-		return _remove_resource(key, -delta)
-	var before := int(amounts[key])
-	amounts[key] = clampi(before + delta, 0, int(capacities[key]))
-	var actual := int(amounts[key]) - before
-	if actual > 0:
-		storage[key] = int(storage.get(key, 0)) + actual
-		total_collected += actual
-	return actual
+	return ledger.add(key, delta)
 
 func set_workbench_available(value: bool) -> void:
 	workbench_available = value
@@ -123,120 +159,45 @@ func grant_item(key: String, amount: int = 1) -> Dictionary:
 	return {"ok":true, "amount":quantity}
 
 func can_collect_from_source(key: String, source_id: String) -> bool:
-	# Empty source IDs are used by legacy/camp systems and remain unrestricted.
-	if source_id.is_empty() or not SOURCE_RULES.has(key): return true
-	var normalized := source_id.to_lower()
-	for allowed_variant in SOURCE_RULES[key]:
-		if normalized.begins_with(str(allowed_variant).to_lower()): return true
-	return false
+	return ledger._source_allowed(key, source_id)
 
 func add_from_source(key: String, delta: int, source_id: String = "") -> int:
 	if not can_collect_from_source(key, source_id): return 0
-	return add(key, delta)
+	return ledger.add(key, delta)
 
 func can_carry(amount: int) -> bool:
-	return carried_count() + maxi(0, amount) <= STACK_MAX * backpack_slot_capacity()
+	return carried_count() + maxi(0, amount) <= STACK_MAX * inventory_state.backpack_capacity
 
 func backpack_slot_capacity() -> int:
 	return backpack_capacity
 
 func backpack_slots_used() -> int:
-	var slots := 0
-	for key in ITEM_KEYS:
-		if int(backpack.get(key, 0)) > 0: slots += 1
-	return slots
+	return inventory_state.backpack_slots_used()
 
 func can_carry_item(key: String, amount: int = 1) -> bool:
-	if amount <= 0: return true
-	var current := int(backpack.get(key, 0))
-	if current + amount > STACK_MAX: return false
-	if current > 0: return true
-	return backpack_slots_used() < backpack_slot_capacity()
+	return inventory_state.can_carry_item(key, amount)
 
 func carried_count() -> int:
 	var total := 0
-	for key in ITEM_KEYS: total += int(backpack.get(key, 0))
+	for key in ITEM_KEYS: total += int(inventory_state.backpack.get(key, 0))
 	return total
 
 func collect_from_source(key: String, delta: int, source_id: String = "") -> int:
-	if delta <= 0 or not amounts.has(key) or not can_collect_from_source(key, source_id): return 0
-	if not can_carry_item(key, delta): return 0
-	var before := int(amounts[key])
-	amounts[key] = clampi(before + delta, 0, int(capacities[key]))
-	var actual := int(amounts[key]) - before
-	if actual > 0:
-		backpack[key] = int(backpack.get(key, 0)) + actual
-		total_collected += actual
-	return actual
+	if delta <= 0 or not can_collect_from_source(key, source_id): return 0
+	var result := ledger.collect_from_source(key, delta, source_id)
+	return int(result.get("added", {}).get(key, 0)) if result.get("ok", false) else 0
 
 func collect_rewards_preflight(rewards: Dictionary, source_id: String = "") -> Dictionary:
-	if rewards.is_empty():
-		return {"ok":true, "reason":"奖励可领取。"}
-	var simulated := backpack.duplicate()
-	var used := backpack_slots_used()
-	for key in rewards:
-		var item := str(key)
-		var amount := maxi(0, int(rewards[key]))
-		if amount == 0: continue
-		if not ITEM_KEYS.has(item):
-			return {"ok":false, "reason":"无法携带未知物品：%s。" % item}
-		if not can_collect_from_source(item, source_id):
-			return {"ok":false, "reason":"该来源无法提供%s。" % display_name(item)}
-		var current := int(simulated.get(item, 0))
-		if current + amount > STACK_MAX:
-			return {"ok":false, "reason":"%s堆叠已达到每格上限 %d。" % [display_name(item), STACK_MAX]}
-		var capacity := int(capacities.get(item, STACK_MAX))
-		if int(amounts.get(item, 0)) + amount > capacity:
-			return {"ok":false, "reason":"%s已达到储备上限 %d。" % [display_name(item), capacity]}
-		if current == 0:
-			used += 1
-			if used > backpack_slot_capacity():
-				return {"ok":false, "reason":"携带空间不足，请先整理背包。"}
-		simulated[item] = current + amount
-	return {"ok":true, "reason":"奖励可领取。"}
+	return ledger.collect_rewards_preflight(rewards, source_id)
 
 func can_collect_rewards(rewards: Dictionary) -> bool:
 	return bool(collect_rewards_preflight(rewards).get("ok", false))
 
 func collect_rewards_atomic(rewards: Dictionary, source_id: String = "") -> Dictionary:
-	if rewards.is_empty():
-		return {"ok":true, "reason":"没有奖励。", "added":{}}
-	if source_id == "camp_task":
-		for key in rewards:
-			var storage_id := str(key)
-			var storage_amount := int(rewards[key])
-			if storage_amount <= 0:
-				continue
-			if not amounts.has(storage_id) or int(amounts.get(storage_id, 0)) + storage_amount > int(capacities.get(storage_id, STACK_MAX)):
-				return {"ok":false, "reason":"营地储备空间不足。", "added":{}}
-		var stored: Dictionary = {}
-		for key in rewards:
-			var storage_id := str(key)
-			var storage_amount := int(rewards[key])
-			if storage_amount <= 0:
-				continue
-			var actual := add(storage_id, storage_amount)
-			if actual != storage_amount:
-				return {"ok":false, "reason":"营地奖励存储失败。", "added":{}}
-			stored[storage_id] = storage_amount
-		return {"ok":true, "reason":"奖励已存入营地。", "added":stored}
-	var preflight := collect_rewards_preflight(rewards, source_id)
-	if not bool(preflight.get("ok", false)):
-		return {"ok":false, "reason":str(preflight.get("reason", "携带空间不足，请先整理背包。")), "added":{}}
-	var added: Dictionary = {}
-	for key in rewards:
-		var id := str(key)
-		var amount := int(rewards[key])
-		if amount <= 0:
-			continue
-		var actual := collect_from_source(id, amount, source_id)
-		if actual != amount:
-			return {"ok":false, "reason":"奖励领取失败。", "added":{}}
-		added[id] = amount
-	return {"ok":true, "reason":"奖励已领取。", "added":added}
+	return ledger.collect_rewards_atomic(rewards, source_id)
 
 func catch_fish(fish_key: String) -> Dictionary:
-	if not FISH_DEFINITIONS.has(fish_key): return {"ok":false, "reason":"未知鱼类。"}
+	if not catalog.FISH_DEFINITIONS.has(fish_key): return {"ok":false, "reason":"未知鱼类。"}
 	if not can_carry_item(fish_key, 1): return {"ok":false, "reason":"背包没有空格或该鱼已堆满。"}
 	backpack[fish_key] = int(backpack.get(fish_key, 0)) + 1
 	amounts[fish_key] = int(amounts.get(fish_key, 0)) + 1
@@ -244,19 +205,19 @@ func catch_fish(fish_key: String) -> Dictionary:
 	return {"ok":true, "fish_key":fish_key, "fish_name":fish_name(fish_key), "food_value":fish_food_value(fish_key)}
 
 func fish_name(fish_key: String) -> String:
-	return str(FISH_DEFINITIONS.get(fish_key, {}).get("label", fish_key))
+	return catalog.fish_name(fish_key)
 
 func fish_food_value(fish_key: String) -> int:
-	return int(FISH_DEFINITIONS.get(fish_key, {}).get("food", 0))
+	return catalog.fish_food_value(fish_key)
 
 func fish_items() -> Array[String]:
 	return FISH_KEYS.duplicate()
 
 func cooked_fish_key(fish_key: String) -> String:
-	return str(FISH_DEFINITIONS.get(fish_key, {}).get("cooked_key", ""))
+	return catalog.cooked_fish_key(fish_key)
 
 func cooked_fish_name(fish_key: String) -> String:
-	return str(FISH_DEFINITIONS.get(fish_key, {}).get("cooked_label", cooked_fish_key(fish_key)))
+	return catalog.display_name(cooked_fish_key(fish_key))
 
 func _can_replace_with_item(source_key: String, output_key: String) -> bool:
 	if int(amounts.get(output_key, 0)) >= int(capacities.get(output_key, STACK_MAX)): return false
@@ -302,33 +263,26 @@ func _remove_resource(key: String, amount: int) -> int:
 	return removed
 
 func move_to_backpack(key: String, amount: int = 1) -> Dictionary:
-	var quantity := mini(maxi(0, amount), int(storage.get(key, 0)))
-	if quantity <= 0: return {"ok":false, "reason":"储物架中没有%s。" % display_name(key)}
-	if not can_carry_item(key, quantity): return {"ok":false, "reason":"背包已满或该物品堆叠达到 %d。" % STACK_MAX}
-	storage[key] = int(storage.get(key, 0)) - quantity
-	backpack[key] = int(backpack.get(key, 0)) + quantity
-	return {"ok":true, "amount":quantity, "reason":"已将 %s%d 放入背包。" % [display_name(key), quantity]}
+	return inventory_state.move_to_backpack(key, amount)
 
 func move_to_storage(key: String, amount: int = 1) -> Dictionary:
-	var quantity := mini(maxi(0, amount), int(backpack.get(key, 0)))
-	if quantity <= 0: return {"ok":false, "reason":"背包中没有%s。" % display_name(key)}
-	backpack[key] = int(backpack.get(key, 0)) - quantity
-	storage[key] = int(storage.get(key, 0)) + quantity
-	return {"ok":true, "amount":quantity, "reason":"已将 %s%d 放回储物架。" % [display_name(key), quantity]}
+	var result := inventory_state.move_to_storage(key, amount)
+	if result.get("ok", false): result["reason"] = "已将 %s%d 放回储物架。" % [display_name(key), int(result.get("amount", 0))]
+	return result
 
 func discard_from_storage(key: String, amount: int = 1) -> Dictionary:
-	var quantity := mini(maxi(0, amount), int(storage.get(key, 0)))
-	if quantity <= 0: return {"ok":false, "reason":"储物架中没有%s。" % display_name(key)}
-	storage[key] = int(storage.get(key, 0)) - quantity
-	if amounts.has(key): amounts[key] = maxi(0, int(amounts.get(key, 0)) - quantity)
-	return {"ok":true, "amount":quantity, "reason":"已丢弃%s%d。" % [display_name(key), quantity]}
+	var result := inventory_state.discard_from_storage(key, amount)
+	if result.get("ok", false):
+		if amounts.has(key): ledger.amounts[key] = maxi(0, int(amounts.get(key, 0)) - int(result.get("amount", 0)))
+		result["reason"] = "已丢弃%s%d。" % [display_name(key), int(result.get("amount", 0))]
+	return result
 
 func discard_from_backpack(key: String, amount: int = 1) -> Dictionary:
-	var quantity := mini(maxi(0, amount), int(backpack.get(key, 0)))
-	if quantity <= 0: return {"ok":false, "reason":"背包中没有%s。" % display_name(key)}
-	backpack[key] = int(backpack.get(key, 0)) - quantity
-	if amounts.has(key): amounts[key] = maxi(0, int(amounts.get(key, 0)) - quantity)
-	return {"ok":true, "amount":quantity, "reason":"已从背包丢弃%s%d。" % [display_name(key), quantity]}
+	var result := inventory_state.discard_from_backpack(key, amount)
+	if result.get("ok", false):
+		if amounts.has(key): ledger.amounts[key] = maxi(0, int(amounts.get(key, 0)) - int(result.get("amount", 0)))
+		result["reason"] = "已从背包丢弃%s%d。" % [display_name(key), int(result.get("amount", 0))]
+	return result
 
 func backpack_text() -> String:
 	var rows: Array[String] = []
@@ -341,29 +295,25 @@ func add_capacity_all(amount: int) -> void:
 	for key in capacities: capacities[key] = int(capacities[key]) + amount
 
 func display_name(key: String) -> String:
-	if FISH_DEFINITIONS.has(key): return fish_name(key)
-	for fish_key in FISH_KEYS:
-		if cooked_fish_key(fish_key) == key: return cooked_fish_name(fish_key)
-	return {"food":"浆果","wood":"木材","medicine":"药品","stone":"石料","fiber":"纤维","cloth":"布料","metal":"金属","water":"水","cooked_food":"熟浆果","bandage":"绷带","torch":"火把","trap":"陷阱","axe":"石斧","pickaxe":"石镐"}.get(key, key)
+	return catalog.display_name(key)
 
 func compact_text() -> String:
 	return "浆%d 木%d 药%d 石%d 纤%d 布%d 金%d 水%d" % [get_amount("food"), get_amount("wood"), get_amount("medicine"), get_amount("stone"), get_amount("fiber"), get_amount("cloth"), get_amount("metal"), get_amount("water")]
 
 func tool_definition(tool_id: String) -> Dictionary:
-	var definition = TOOL_DEFINITIONS.get(tool_id, {})
-	return definition.duplicate(true) if definition is Dictionary else {}
+	return catalog.tool_definition(tool_id)
 
 func tool_display_name(tool_id: String) -> String:
 	return str(tool_definition(tool_id).get("label", tool_id))
 
 func is_tool_unlocked(tool_id: String) -> bool:
-	return tool_id in unlocked_tools and TOOL_DEFINITIONS.has(tool_id)
+	return tool_id in unlocked_tools and catalog.TOOL_DEFINITIONS.has(tool_id)
 
 func is_axe_unlocked() -> bool:
 	return is_tool_unlocked("axe")
 
 func unlock_tool(tool_id: String) -> Dictionary:
-	if not TOOL_DEFINITIONS.has(tool_id):
+	if not catalog.TOOL_DEFINITIONS.has(tool_id):
 		return {"ok":false, "reason":"未知工具：%s" % tool_id, "tool_id":tool_id}
 	if is_tool_unlocked(tool_id):
 		return {"ok":true, "already_unlocked":true, "reason":"已解锁%s配方。" % tool_display_name(tool_id), "tool_id":tool_id}
@@ -387,7 +337,7 @@ func is_axe_owned() -> bool:
 
 func can_craft_tool(tool_id: String) -> bool:
 	if not workbench_available: return false
-	if not TOOL_DEFINITIONS.has(tool_id) or has_tool(tool_id) or not is_tool_unlocked(tool_id): return false
+	if not catalog.TOOL_DEFINITIONS.has(tool_id) or has_tool(tool_id) or not is_tool_unlocked(tool_id): return false
 	return can_afford(tool_definition(tool_id).get("cost", {}))
 
 func can_craft_axe() -> bool:
@@ -417,7 +367,7 @@ func pickaxe_status() -> Dictionary:
 	return tool_status("pickaxe")
 
 func craft_tool(tool_id: String) -> Dictionary:
-	if not TOOL_DEFINITIONS.has(tool_id):
+	if not catalog.TOOL_DEFINITIONS.has(tool_id):
 		return {"ok":false, "reason":"未知工具：%s" % tool_id, "tool_id":tool_id}
 	var label := tool_display_name(tool_id)
 	if has_tool(tool_id):
@@ -454,28 +404,30 @@ func tools_text() -> String:
 	return "工具：" + ("、".join(owned) if not owned.is_empty() else "无")
 
 func to_dict() -> Dictionary:
-	return {"amounts":amounts, "capacities":capacities, "total_collected":total_collected, "tools":tools, "unlocked_tools":unlocked_tools, "backpack":backpack, "storage":storage, "workbench_available":workbench_available}
+	var result := ledger.to_dict()
+	result.merge(inventory_state.to_dict(), true)
+	result["tools"] = tools.duplicate(true)
+	result["unlocked_tools"] = unlocked_tools.duplicate()
+	result["workbench_available"] = workbench_available
+	return result
 
 func from_dict(data: Dictionary) -> void:
-	var old_amounts: Dictionary = data.get("amounts", {})
-	var old_capacities: Dictionary = data.get("capacities", {})
+	var saved_amounts = data.get("amounts", {})
+	var saved_capacities = data.get("capacities", {})
 	for key in ITEM_KEYS:
-		if old_amounts.has(key): amounts[key] = maxi(0, int(old_amounts[key]))
-		if old_capacities.has(key): capacities[key] = maxi(1, int(old_capacities[key]))
-	backpack = {}
-	storage = {}
-	var saved_backpack = data.get("backpack", {})
-	var saved_storage = data.get("storage", {})
-	for key in ITEM_KEYS:
-		backpack[key] = maxi(0, int(saved_backpack.get(key, 0))) if saved_backpack is Dictionary else 0
-		var default_storage := int(amounts.get(key, 0)) if key in RESOURCE_KEYS else 0
-		storage[key] = maxi(0, int(saved_storage.get(key, default_storage))) if saved_storage is Dictionary else default_storage
+		if saved_amounts is Dictionary and saved_amounts.has(key): ledger.amounts[key] = maxi(0, int(saved_amounts[key]))
+		if saved_capacities is Dictionary and saved_capacities.has(key): ledger.capacities[key] = maxi(1, int(saved_capacities[key]))
+	ledger.total_collected = int(data.get("total_collected", 0))
+	inventory_state.from_dict(data)
+	_bind_state_aliases()
 	backpack_capacity = BACKPACK_BASE_CAPACITY
 	workbench_available = bool(data.get("workbench_available", true))
 	total_collected = int(data.get("total_collected", 0))
 	# Old saves do not contain tool fields, so they cleanly start without tools
 	# while retaining the now-known axe and pickaxe recipes.
-	tools = {"axe": false, "pickaxe": false}
+	tool_state.clear()
+	tool_state["axe"] = false
+	tool_state["pickaxe"] = false
 	var saved_tools = data.get("tools", {})
 	if saved_tools is Dictionary:
 		for tool_id in TOOL_KEYS:
@@ -489,7 +441,7 @@ func from_dict(data: Dictionary) -> void:
 		unlocked_tools = []
 		for tool_id in saved_unlocked:
 			var id := str(tool_id)
-			if TOOL_DEFINITIONS.has(id) and id not in unlocked_tools: unlocked_tools.append(id)
+			if catalog.TOOL_DEFINITIONS.has(id) and id not in unlocked_tools: unlocked_tools.append(id)
 		# A malformed/legacy list should not strand a player without either
 		# explicitly supported gathering recipe.
 		if "axe" not in unlocked_tools: unlocked_tools.append("axe")
